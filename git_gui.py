@@ -73,7 +73,7 @@ class GitKonsolu(QWidget):
 
         baslik_font = self.lbl_baslik.font()
         baslik_font.setBold(True)
-        baslik_font.setPointSize(11)
+        baslik_font.setPointSize(10)
         self.lbl_baslik.setFont(baslik_font)
 
         self.lbl_baslik.setStyleSheet("color: #f5f5f7;")
@@ -359,7 +359,7 @@ class BasitGitGUI(QMainWindow):
 
         gecmis_font = self.lbl_gecmis_baslik.font()
         gecmis_font.setBold(True)
-        gecmis_font.setPointSize(11)
+        gecmis_font.setPointSize(10)
         self.lbl_gecmis_baslik.setFont(gecmis_font)
 
         self.lbl_gecmis_baslik.setStyleSheet("color: #f5f5f7;")
@@ -762,6 +762,7 @@ if __name__ == "__main__":
         if font_id >= 0:
             font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
             custom_font = QFont(font_family)
+            custom_font.setPointSize(10)
             app.setFont(custom_font)
 
     window = BasitGitGUI()
