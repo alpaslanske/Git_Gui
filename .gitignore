@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+venv/
+.env
+
+data/bookmarks.db
+data/settings.json
+
+.idea/
+.vscode/
+
