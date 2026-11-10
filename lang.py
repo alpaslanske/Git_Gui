@@ -177,6 +177,7 @@ METINLER = {
         "lbl_local_tags": "Yerel Etiketler",
         "lbl_local_tags_header": "--- YEREL ETİKETLER ---",
         "banner_not_git": "Git Klasörü Değil",
+        "msg_release_pronoun": "GitHub Actions otomatik derlemesinin çalışması için sürüm adı 'v' harfi ile başlamalıdır!\n(Örn: v1.0.1)",
         "dlg_squash_warn_msg": "Uyarı: Commit birleştirme (Squash) işlemi lineer (Merge olmayan) geçmişlerde sorunsuz çalışır.\nAraya karışmış dal birleştirmeleri varsa hata verebilir.\n\nDevam etmek istiyor musunuz?"
     },
 
@@ -358,6 +359,7 @@ METINLER = {
         "lbl_local_tags": "Local Tags",
         "lbl_local_tags_header": "--- LOCAL TAGS ---",
         "banner_not_git": "Not a Git Repository",
+        "msg_release_pronoun": "For the GitHub Actions automated build to work, the version name must begin with the letter 'v'! (e.g., v1.0.1)",
         "dlg_squash_warn_msg": "Warning: Squashing commits works best on linear history (no Merges).\nIt might fail if there are merge commits in between.\n\nDo you want to proceed?"
     }
 }

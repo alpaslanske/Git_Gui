@@ -1551,6 +1551,12 @@ class GitGUI(QMainWindow):
         tag_adi = input_tag.text().strip()
         if not tag_adi:
             return
+            
+        # --- YENİ EKLENEN KONTROL ---
+        if not tag_adi.startswith("v"):
+            QMessageBox.warning(self, self.t("hata"), self.t("msg_release_pronoun"))
+            return
+        # ----------------------------
 
         tag_adi = tag_adi.replace(" ", "-")
 
