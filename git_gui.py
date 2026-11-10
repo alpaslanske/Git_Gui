@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import webbrowser
+import re
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, QPropertyAnimation, QEasingCurve
@@ -30,13 +31,13 @@ PROJE_ANA_DIZINI = LocationForDocs
 
 # ==========================================
 # İŞ PARÇACIKLARI (THREADS)
-# Her bir işçi UI kilidini engeller ve 
+# Her bir işçi UI kilidini engeller ve
 # bağımsız bir GitMotoru kopyasıyla çalışarak Thread Safety sağlar.
 # ==========================================
 
 class UsernameIscisi(QThread):
     sonuc_sinyali = Signal(str)
-    
+
     def run(self):
         try:
             res = subprocess.run(["gh", "api", "user", "-q", ".login"], capture_output=True, text=True, timeout=3)
@@ -70,7 +71,7 @@ class SurumIscisi(QThread):
         basarili, hata = motor.git_tag_olustur(self.tag_adi, self.aciklama, self.dosya_yolu)
         self.sonuc_sinyali.emit(basarili, hata)
 
-class KlonlamaIsçisi(QThread):
+class KlonlamaIscisi(QThread):
     sonuc_sinyali = Signal(bool, str, str)
     log_sinyali = Signal(str)
     def __init__(self, url, hedef_yol):
@@ -108,11 +109,11 @@ class PushIscisi(QThread):
 class FetchIscisi(QThread):
     sonuc_sinyali = Signal(bool, object)
     log_sinyali = Signal(str)
-    
+
     def __init__(self, repo_path):
         super().__init__()
         self.repo_path = repo_path
-        
+
     def run(self):
         motor = GitMotoru()
         motor.set_path(self.repo_path)
@@ -193,7 +194,7 @@ class ModernButton(QPushButton):
         h, s, l, a = color_obj.getHsl()
         l = min(255, int(l * 1.15))
         hover_color = QColor.fromHsl(h, s, l, a).name()
-        
+
         # Sabit font ve point-size kaldırıldı, dinamik CSS eklendi
         self.setStyleSheet(f"""
             QPushButton {{
@@ -216,6 +217,129 @@ class ModernButton(QPushButton):
     def update_color(self, new_color):
         self.bg_color = new_color
         self.update_style()
+
+class CakismaCozucuDialog(QDialog):
+    def __init__(self, parent=None, motor=None, lang_func=None):
+        super().__init__(parent)
+        self.motor = motor
+        self.t = lang_func
+        self.secili_dosya_yolu = None
+        
+        self.setWindowTitle(self.t("dlg_conflict_title"))
+        self.resize(1000, 600)
+        self.setModal(True)
+        self.setObjectName("CardFlat") # Temaya uydurmak için
+
+        layout = QHBoxLayout(self)
+
+        # SOL PANEL: Çakışan Dosyalar Listesi
+        sol_layout = QVBoxLayout()
+        lbl_dosyalar = QLabel(self.t("lbl_conflict_files"))
+        lbl_dosyalar.setObjectName("SectionLabel")
+        sol_layout.addWidget(lbl_dosyalar)
+
+        self.list_dosyalar = QListWidget()
+        self.list_dosyalar.itemClicked.connect(self.dosya_secildi)
+        sol_layout.addWidget(self.list_dosyalar)
+        
+        self.btn_tamamla = ModernButton(self.t("btn_complete_merge"), "Primary")
+        self.btn_tamamla.clicked.connect(self.birlestirmeyi_tamamla)
+        self.btn_tamamla.setEnabled(False)
+        sol_layout.addWidget(self.btn_tamamla)
+
+        # SAĞ PANEL: Kod Editörü ve Aksiyonlar
+        sag_layout = QVBoxLayout()
+        
+        buton_layout = QHBoxLayout()
+        self.btn_mevcut_koru = ModernButton(self.t("btn_resolve_current"), "Primary")
+        self.btn_mevcut_koru.setStyleSheet("background-color: #059669; color: white;") # Yeşil
+        self.btn_mevcut_koru.clicked.connect(lambda: self.kod_koru("mevcut"))
+        
+        self.btn_gelen_koru = ModernButton(self.t("btn_resolve_incoming"), "Primary")
+        self.btn_gelen_koru.setStyleSheet("background-color: #2563eb; color: white;") # Mavi
+        self.btn_gelen_koru.clicked.connect(lambda: self.kod_koru("gelen"))
+        
+        self.btn_cozuldu = ModernButton(self.t("btn_mark_resolved"), "Primary")
+        self.btn_cozuldu.clicked.connect(self.cozuldu_isaretle)
+
+        buton_layout.addWidget(self.btn_mevcut_koru)
+        buton_layout.addWidget(self.btn_gelen_koru)
+        buton_layout.addStretch()
+        buton_layout.addWidget(self.btn_cozuldu)
+        sag_layout.addLayout(buton_layout)
+
+        self.kod_editor = QTextEdit()
+        self.kod_editor.setLineWrapMode(QTextEdit.NoWrap)
+        self.kod_editor.setStyleSheet("font-family: Consolas, monospace; font-size: 13px; background-color: #101419; color: #e1e6ea;")
+        sag_layout.addWidget(self.kod_editor)
+
+        layout.addLayout(sol_layout, 1)
+        layout.addLayout(sag_layout, 3)
+        
+        self.cakismalari_yukle()
+
+    def cakismalari_yukle(self):
+        self.list_dosyalar.clear()
+        dosyalar = self.motor.get_conflicted_files()
+        if not dosyalar:
+            self.btn_tamamla.setEnabled(True)
+        else:
+            for dosya in dosyalar:
+                self.list_dosyalar.addItem(dosya)
+
+    def dosya_secildi(self, item):
+        self.secili_dosya_yolu = os.path.join(self.motor.repo_path, item.text())
+        if os.path.exists(self.secili_dosya_yolu):
+            with open(self.secili_dosya_yolu, 'r', encoding='utf-8', errors='replace') as f:
+                icerik = f.read()
+            self.kod_editor.setPlainText(icerik)
+            self.renklendir()
+
+    def renklendir(self):
+        # <<<<<<< HEAD ve >>>>>>> arasını HTML ile renklendirme
+        icerik = self.kod_editor.toPlainText()
+        # Çakışma bloklarını bulup arka planlarını boyarız (Görsel Yardım)
+        icerik = icerik.replace("<<<<<<<", "<span style='background-color: #4A1620; color: white; display:block;'><b><<<<<<< (MEVCUT KOD)</b>")
+        icerik = icerik.replace("=======", "</span><span style='background-color: #0E7490; color: white; display:block;'><b>======= (AYIRICI)</b>")
+        icerik = icerik.replace(">>>>>>>", "</span><span style='background-color: #164E63; color: white; display:block;'><b>>>>>>>> (GELEN KOD)</b></span>")
+        self.kod_editor.setHtml(icerik.replace("\n", "<br>"))
+
+    def kod_koru(self, secim):
+        icerik = self.kod_editor.toPlainText()
+        # Düzenli ifade ile çakışma bloklarını temizler, seçileni tutar
+        pattern = r"<<<<<<<.*?\n(.*?)=======\n(.*?)>>>>>>>.*?\n"
+        
+        def replacer(match):
+            mevcut = match.group(1)
+            gelen = match.group(2)
+            return mevcut if secim == "mevcut" else gelen
+
+        yeni_icerik = re.sub(pattern, replacer, icerik, flags=re.DOTALL)
+        self.kod_editor.setPlainText(yeni_icerik)
+
+    def cozuldu_isaretle(self):
+        if not self.secili_dosya_yolu: return
+        # Dosyayı kaydet
+        yeni_icerik = self.kod_editor.toPlainText()
+        with open(self.secili_dosya_yolu, 'w', encoding='utf-8') as f:
+            f.write(yeni_icerik)
+        
+        # Git add
+        self.motor.mark_resolved(self.secili_dosya_yolu)
+        QMessageBox.information(self, "Git", self.t("msg_conflict_saved"))
+        
+        # Listeden kaldır
+        self.list_dosyalar.takeItem(self.list_dosyalar.currentRow())
+        self.kod_editor.clear()
+        
+        # Hepsi bittiyse tamamla butonunu aç
+        if self.list_dosyalar.count() == 0:
+            self.btn_tamamla.setEnabled(True)
+
+    def birlestirmeyi_tamamla(self):
+        # Kalan işlem commit yapmaktır
+        QMessageBox.information(self, "Git", self.t("msg_all_resolved"))
+        self.accept()
 
 class GitKonsolu(QWidget):
     def __init__(self):
@@ -296,7 +420,7 @@ class GitGUI(QMainWindow):
             self.combo_lang.blockSignals(False)
 
             self.varsayilan_arama_dizini = ayarlar.get("default_search_path", "")
-            
+
             # Github adını arkadan senkronize et (Arayüz kilitlenmez)
             self.github_kullanici_adi = ayarlar.get("github_username", "")
             if not self.github_kullanici_adi:
@@ -316,8 +440,8 @@ class GitGUI(QMainWindow):
             son_klasor = ayarlar.get("last_repo_path", "")
             if son_klasor and Path(son_klasor).exists():
                 self.motor.repo_path = son_klasor
-                self.gecmise_repo_ekle(son_klasor) 
-            
+                self.gecmise_repo_ekle(son_klasor)
+
             self.butonlari_guncelle()
         except Exception as e:
             print(f"Ayar yükleme hatası: {e}")
@@ -350,7 +474,7 @@ class GitGUI(QMainWindow):
         self.user_isci = UsernameIscisi()
         self.user_isci.sonuc_sinyali.connect(self.otomatik_kullanici_adi_tamamlandi)
         self.user_isci.start()
-        
+
     def otomatik_kullanici_adi_tamamlandi(self, username):
         if username:
             self.github_kullanici_adi = username
@@ -413,10 +537,10 @@ class GitGUI(QMainWindow):
         self.btn_yeni_dal.setText(self.t("btn_yeni_dal"))
         self.btn_dal_sil.setText(self.t("btn_dal_sil"))
         self.btn_dal_birlestir.setText(self.t("btn_dal_birlestir"))
-        
+
         if self.combo_branches.count() == 1:
             self.combo_branches.setItemText(0, self.t("combo_dal_sec"))
-        
+
         if not self.motor.repo_path:
             self.lbl_durum.setText(self.t("lbl_durum_bekleniyor"))
         else:
@@ -450,17 +574,17 @@ class GitGUI(QMainWindow):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
-        
+
         self.scroll_icerik = QWidget()
         self.scroll_icerik.setStyleSheet("background-color: transparent;")
         self.scroll_layout = QVBoxLayout(self.scroll_icerik)
         self.scroll_layout.setContentsMargins(0, 0, 0, 0)
         self.scroll_layout.setSpacing(5)
         self.scroll_layout.setAlignment(Qt.AlignTop)
-        
+
         scroll_area.setWidget(self.scroll_icerik)
         yan_panel_layout.addWidget(scroll_area)
-        
+
         ana_yatay_layout.addWidget(self.yan_panel)
 
         # --- SAĞ TARAF (ANA UYGULAMA) ---
@@ -471,7 +595,7 @@ class GitGUI(QMainWindow):
 
         top_bar = QHBoxLayout()
         top_bar.setSpacing(10)
-        
+
         self.btn_toggle_sidebar = QPushButton("")
         self.btn_toggle_sidebar.setStyleSheet("""
             QPushButton {
@@ -506,13 +630,13 @@ class GitGUI(QMainWindow):
         frame_top = QFrame()
         frame_top.setStyleSheet("QFrame { background-color: #2a2a32; border: 1px solid #3f3f46; border-radius: 6px; }")
         top_layout = QVBoxLayout(frame_top)
-        
+
         secim_layout = QHBoxLayout()
         secim_layout.setSpacing(10)
 
         self.btn_sec = ModernButton("", "#007acc")
         self.btn_sec.clicked.connect(self.klasor_sec)
-        secim_layout.addWidget(self.btn_sec, 1) 
+        secim_layout.addWidget(self.btn_sec, 1)
 
         self.combo_repos = QComboBox()
         self.combo_repos.setMinimumHeight(40)
@@ -524,7 +648,7 @@ class GitGUI(QMainWindow):
         """)
         self.combo_repos.addItem("📂 Mevcut Repolar...")
         self.combo_repos.currentIndexChanged.connect(self.repo_combobox_degisti)
-        secim_layout.addWidget(self.combo_repos, 2) 
+        secim_layout.addWidget(self.combo_repos, 2)
         self.combo_branches = QComboBox()
         self.combo_branches.setMinimumHeight(40)
         self.combo_branches.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -555,22 +679,22 @@ class GitGUI(QMainWindow):
         self.btn_init = ModernButton("", "#28a745")
         self.btn_init.clicked.connect(self.git_init)
         sol_layout.addWidget(self.btn_init)
-        
+
         self.btn_commit = ModernButton("", "#d97706")
         self.btn_commit.clicked.connect(self.git_commit)
         sol_layout.addWidget(self.btn_commit)
-        
+
         self.btn_delete_commit = ModernButton("", "#b91c1c")
         self.btn_delete_commit.clicked.connect(self.git_commit_sil)
         sol_layout.addWidget(self.btn_delete_commit)
-        
+
         self.btn_rollback = ModernButton("", "#dc3545")
         self.btn_rollback.clicked.connect(self.git_rollback)
         sol_layout.addWidget(self.btn_rollback)
-        
+
         self.btn_rebase = ModernButton("", "#475569")
         self.btn_rebase.clicked.connect(self.git_rebase)
-        
+
         self.btn_yeni_dal = ModernButton("", "#10b981") # Zümrüt Yeşili
         self.btn_yeni_dal.clicked.connect(self.yeni_dal_olustur)
         sol_layout.addWidget(self.btn_yeni_dal)
@@ -582,7 +706,7 @@ class GitGUI(QMainWindow):
         self.btn_dal_birlestir = ModernButton("", "#8b5cf6") # Mor renk
         self.btn_dal_birlestir.clicked.connect(self.dal_birlestir)
         sol_layout.addWidget(self.btn_dal_birlestir)
-        
+
         sol_layout.addWidget(self.btn_rebase)
         orta_layout.addLayout(sol_layout)
 
@@ -652,25 +776,25 @@ class GitGUI(QMainWindow):
 
         self.konsol = GitKonsolu()
         main_layout.addWidget(self.konsol)
-        
+
         ana_yatay_layout.addWidget(sag_widget, 1)
         self.setCentralWidget(central_widget)
 
     def toggle_sidebar(self):
         hedef_genislik = 250 if self.yan_panel.width() == 0 else 0
-        
+
         self.anim = QPropertyAnimation(self.yan_panel, b"minimumWidth")
-        self.anim.setDuration(250) 
+        self.anim.setDuration(250)
         self.anim.setStartValue(self.yan_panel.width())
         self.anim.setEndValue(hedef_genislik)
         self.anim.setEasingCurve(QEasingCurve.InOutQuart)
-        
+
         self.anim_max = QPropertyAnimation(self.yan_panel, b"maximumWidth")
-        self.anim_max.setDuration(250) 
+        self.anim_max.setDuration(250)
         self.anim_max.setStartValue(self.yan_panel.width())
         self.anim_max.setEndValue(hedef_genislik)
         self.anim_max.setEasingCurve(QEasingCurve.InOutQuart)
-        
+
         self.anim.start()
         self.anim_max.start()
 
@@ -685,21 +809,21 @@ class GitGUI(QMainWindow):
                 if not repo_path or not os.path.exists(repo_path):
                     continue
                 klasor_adi = os.path.basename(os.path.abspath(repo_path))
-                
+
                 # --- MODERN TASARIM VE RENKLENDİRME ---
                 if hasattr(self.motor, 'repo_path') and self.motor.repo_path == repo_path:
                     # Aktif Repo Stili (Mavi arka plan, sol vurgu çizgisi ve beyaz metin)
                     buton_stili = """
                         QPushButton {
-                            background-color: #0369a1; 
-                            color: #ffffff; 
-                            border: none; 
-                            border-left: 4px solid #38bdf8; 
-                            border-radius: 4px; 
-                            padding: 10px 15px; 
-                            text-align: left; 
+                            background-color: #0369a1;
+                            color: #ffffff;
+                            border: none;
+                            border-left: 4px solid #38bdf8;
+                            border-radius: 4px;
+                            padding: 10px 15px;
+                            text-align: left;
                             font-weight: bold;
-                            font-size: 13px;
+                            font-size: 14px;
                         }
                     """
                     gosterim_adi = f"📂 {klasor_adi}" # Aktif klasör ikonu
@@ -707,25 +831,25 @@ class GitGUI(QMainWindow):
                     # Pasif Repo Stili (Şeffaf arka plan, gri metin, hover efekti)
                     buton_stili = """
                         QPushButton {
-                            background-color: transparent; 
-                            color: #a1a1aa; 
-                            border: none; 
-                            border-left: 4px solid transparent; 
-                            border-radius: 4px; 
-                            padding: 10px 15px; 
-                            text-align: left; 
-                            font-weight: normal;
-                            font-size: 13px;
+                            background-color: transparent;
+                            color: #a1a1aa;
+                            border: none;
+                            border-left: 4px solid transparent;
+                            border-radius: 4px;
+                            padding: 10px 15px;
+                            text-align: left;
+                            font-weight: bold;
+                            font-size: 14px;
                         }
-                        QPushButton:hover { 
-                            background-color: #3f3f46; 
-                            color: #f4f4f5; 
-                            border-left: 4px solid #71717a; 
+                        QPushButton:hover {
+                            background-color: #04486e;
+                            color: #f4f4f5;
+                            border-left: 4px solid #71717a;
                         }
                     """
                     gosterim_adi = f"📁 {klasor_adi}" # Pasif klasör ikonu
                 # -------------------------------------------
-                
+
                 if i < mevcut_buton_sayisi:
                     # Var olan butonu yeniden kullan
                     btn = self.scroll_layout.itemAt(i).widget()
@@ -733,7 +857,7 @@ class GitGUI(QMainWindow):
                     btn.setToolTip(repo_path)
                     btn.setStyleSheet(buton_stili)
                     btn.show()
-                    try: btn.clicked.disconnect() 
+                    try: btn.clicked.disconnect()
                     except: pass
                     btn.clicked.connect(lambda checked=False, p=repo_path: self.yan_panelden_repo_sec(p))
                 else:
@@ -757,7 +881,7 @@ class GitGUI(QMainWindow):
             self.gecmise_repo_ekle(repo_path)
             self.butonlari_guncelle()
         else:
-            QMessageBox.warning(self, self.t("hata"), "Klasör artık mevcut değil.")
+            QMessageBox.warning(self, self.t("hata"), self.t("err_klasor_yok"))
             if repo_path in self.repo_history:
                 self.repo_history.remove(repo_path)
                 self.gecmise_repo_ekle(self.motor.repo_path if self.motor.repo_path else "")
@@ -781,9 +905,9 @@ class GitGUI(QMainWindow):
             self.konsol.yaz("> git status")
             self.konsol.yaz(status_text)
             self.lbl_banner.show()
-            
+
             self.lbl_durum.setText("") # Git aktif yazısını kaldırdık
-            
+
             if is_clean:
                 self.lbl_banner.setStyleSheet("QLabel { background-color: #22c55e; color: white; border-radius: 4px; padding: 6px; }")
                 self.lbl_banner.setText(self.t("banner_clean"))
@@ -793,8 +917,8 @@ class GitGUI(QMainWindow):
         else:
             self.lbl_banner.show()
             self.lbl_banner.setStyleSheet("QLabel { background-color: #64748b; color: white; border-radius: 4px; padding: 6px; }")
-            self.lbl_banner.setText("Git Klasörü Değil") 
-            
+            self.lbl_banner.setText(self.t("banner_not_git"))
+
             self.lbl_durum.setText("") # Git değil yazısını kaldırdık
             self.listbox_gecmis.clear()
 
@@ -816,18 +940,18 @@ class GitGUI(QMainWindow):
         self.btn_yeni_dal.setEnabled(is_git)
         self.btn_dal_sil.setEnabled(is_git)
         self.btn_dal_birlestir.setEnabled(is_git)
-        
+
     def git_fetch_kontrol(self):
         # lbl_durum kaldırıldığı için mesajı konsola yazdırıyoruz
         self.konsol.yaz("> Fetch işlemi bekleniyor...")
         self._set_ui_lock(False)
         QApplication.processEvents()
-        
+
         self.fetch_isci = FetchIscisi(self.motor.repo_path)
         self.fetch_isci.log_sinyali.connect(self.konsol.yaz)
         self.fetch_isci.sonuc_sinyali.connect(self.fetch_tamamlandi)
-        self.fetch_isci.start()        
-        
+        self.fetch_isci.start()
+
     def fetch_tamamlandi(self, basarili, sonuc):
         if not basarili:
             if sonuc == "no_remote":
@@ -844,7 +968,7 @@ class GitGUI(QMainWindow):
             elif ileri == 0 and geri > 0:
                 # Gerideyse soru sor
                 cevap = QMessageBox.question(
-                    self, self.t("basarili"), 
+                    self, self.t("basarili"),
                     f"{self.t('fetch_geride').format(geri)}\n\nUzak sunucudaki değişiklikleri şimdi çekmek (Pull) ister misiniz?",
                     QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
                 )
@@ -858,7 +982,7 @@ class GitGUI(QMainWindow):
             else:
                 # Hem ileri hem geriyse (Farklı branch'ler)
                 cevap = QMessageBox.question(
-                    self, self.t("basarili"), 
+                    self, self.t("basarili"),
                     f"{self.t('fetch_farkli').format(ileri, geri)}\n\nDeğişiklikleri birleştirmek (Pull / Merge) ister misiniz?",
                     QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
                 )
@@ -866,12 +990,12 @@ class GitGUI(QMainWindow):
                     self.git_pull_baslat()
                 else:
                     self.butonlari_guncelle()
-                    
+
     def git_pull_baslat(self):
         self.konsol.yaz("> git pull işlemi başlatılıyor...")
         self._set_ui_lock(False)
         QApplication.processEvents()
-        
+
         self.pull_isci = PullIscisi(self.motor.repo_path)
         self.pull_isci.log_sinyali.connect(self.konsol.yaz)
         self.pull_isci.sonuc_sinyali.connect(self.pull_tamamlandi)
@@ -891,31 +1015,31 @@ class GitGUI(QMainWindow):
             self.repo_history = []
 
         path = str(path)
-        
-        # --- YENİ KONTROL: Git klasörü değilse geçmişe eklemeyi durdur ---
+
+        # ---- Git klasörü değilse geçmişe eklemeyi durdur ---
         if not self.motor.git_klasoru_mu(path):
             return
         # -----------------------------------------------------------------
-        
+
         if path not in self.repo_history:
             self.repo_history.append(path)
 
         self.repo_history.sort(key=lambda p: os.path.basename(os.path.abspath(p)).lower())
-        self.repo_history = self.repo_history[:15] 
+        self.repo_history = self.repo_history[:15]
 
         self.combo_repos.blockSignals(True)
         self.combo_repos.clear()
         self.combo_repos.addItem(self.t("combo_repo_history"))
         self.combo_repos.addItems(self.repo_history)
-        
+
         if path in self.repo_history:
             idx = self.repo_history.index(path)
             self.combo_repos.setCurrentIndex(idx + 1)
-            
+
         self.combo_repos.blockSignals(False)
         self.yan_panel_guncelle()
         self.ayarlari_kaydet()
-        
+
     def repo_combobox_degisti(self, index):
         if index > 0:
             secilen = self.combo_repos.currentText()
@@ -925,7 +1049,7 @@ class GitGUI(QMainWindow):
                 self.gecmise_repo_ekle(secilen)
                 self.butonlari_guncelle()
             else:
-                QMessageBox.warning(self, self.t("hata"), "Klasör artık mevcut değil.")
+                QMessageBox.warning(self, self.t("hata"), self.t("err_klasor_yok"))
                 self.repo_history.remove(secilen)
                 self.gecmise_repo_ekle(self.motor.repo_path if self.motor.repo_path else "")
 
@@ -956,7 +1080,29 @@ class GitGUI(QMainWindow):
         dialog.setWindowTitle(self.t("secim_penceresi"))
         dialog.setDirectory(baslangic)
         dialog.setFileMode(QFileDialog.Directory)
-        dialog.setOption(QFileDialog.DontUseNativeDialog, False)
+        dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+
+        # BOYUT AYARI
+        dialog.setMinimumSize(780, 600) # Genişlik 900px, Yükseklik 600px
+        dialog.resize(780, 600)
+
+        # 1. Klasörleri ayrıntılı görünümde (İsim, Boyut, Tarih vb.) aç
+        dialog.setViewMode(QFileDialog.Detail)
+
+        # 2. Sol panele (Sidebar) Mount edilmiş diskleri/bölümleri ekle
+        from PySide6.QtCore import QStorageInfo, QUrl
+        kisayollar = dialog.sidebarUrls()
+
+        for disk in QStorageInfo.mountedVolumes():
+            if disk.isValid() and disk.isReady():
+                fs_type = bytes(disk.fileSystemType()).decode("utf-8", errors="ignore")
+                # İşletim sisteminin sanal disklerini (tmpfs, proc vb.) sol menüde kalabalık yapmaması için gizliyoruz
+                if fs_type not in ["tmpfs", "devtmpfs", "proc", "sysfs", "cgroup", "squashfs", "overlay", "efivarfs", "tracefs"]:
+                    disk_url = QUrl.fromLocalFile(disk.rootPath())
+                    if disk_url not in kisayollar:
+                        kisayollar.append(disk_url)
+
+        dialog.setSidebarUrls(kisayollar)
 
         if dialog.exec():
             secilen_yollar = dialog.selectedFiles()
@@ -1022,7 +1168,7 @@ class GitGUI(QMainWindow):
         pano = QApplication.clipboard()
         pano.clear()
         pano.setText(kod)
-        QApplication.processEvents() 
+        QApplication.processEvents()
 
         QMessageBox.information(self, self.t("github_girisi"), self.t("kod_kopyalandi").format(kod))
         webbrowser.open("https://github.com/login/device")
@@ -1200,24 +1346,50 @@ class GitGUI(QMainWindow):
         url = url.strip()
         varsayilan_isim = url.split("/")[-1].replace(".git", "") if "/" in url else "yeni_proje"
         baslangic = self.varsayilan_arama_dizini if self.varsayilan_arama_dizini else str(Path.home())
-        QMessageBox.information(self, self.t("dlg_clone_title"), "Lütfen projenin indirileceği ana klasörü seçin.")
-        ana_dizin = QFileDialog.getExistingDirectory(self, self.t("secim_penceresi"), baslangic)
-        if not ana_dizin: return
-        hedef_tam_yol = os.path.join(ana_dizin, varsayilan_isim)
-        sayac = 1
-        orjinal_yol = hedef_tam_yol
-        while os.path.exists(hedef_tam_yol):
-            hedef_tam_yol = f"{orjinal_yol}_{sayac}"
-            sayac += 1
-        self.lbl_durum.setText(self.t("msg_cloning"))
-        self.konsol.yaz(f"> Depo klonlanıyor (Arka Plan İşlemi): {url}")
-        self._set_ui_lock(False)
-        self.btn_clone.setEnabled(False)
-        QApplication.processEvents()
-        self.isci = KlonlamaIsçisi(url, hedef_tam_yol)
-        self.isci.log_sinyali.connect(self.konsol.yaz)
-        self.isci.sonuc_sinyali.connect(self.klonlama_tamamlandi)
-        self.isci.start()
+        QMessageBox.information(self, self.t("dlg_clone_title"), self.t("msg_clone_target"))
+
+        # Klasör seçiciyi detaylı görünüm ve boyut ayarıyla başlatıyoruz
+        dialog = QFileDialog(self)
+        dialog.setWindowTitle(self.t("secim_penceresi"))
+        dialog.setDirectory(baslangic)
+        dialog.setFileMode(QFileDialog.Directory)
+        dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+
+        dialog.setMinimumSize(900, 600)
+        dialog.resize(900, 600)
+        dialog.setViewMode(QFileDialog.Detail)
+
+        # Sol panele (Sidebar) Mount edilmiş diskleri/bölümleri ekle
+        from PySide6.QtCore import QStorageInfo, QUrl
+        kisayollar = dialog.sidebarUrls()
+        for disk in QStorageInfo.mountedVolumes():
+            if disk.isValid() and disk.isReady():
+                fs_type = bytes(disk.fileSystemType()).decode("utf-8", errors="ignore")
+                if fs_type not in ["tmpfs", "devtmpfs", "proc", "sysfs", "cgroup", "squashfs", "overlay", "efivarfs", "tracefs"]:
+                    disk_url = QUrl.fromLocalFile(disk.rootPath())
+                    if disk_url not in kisayollar:
+                        kisayollar.append(disk_url)
+        dialog.setSidebarUrls(kisayollar)
+
+        if dialog.exec():
+            secilen_yollar = dialog.selectedFiles()
+            if secilen_yollar:
+                ana_dizin = secilen_yollar[0]
+                hedef_tam_yol = os.path.join(ana_dizin, varsayilan_isim)
+                sayac = 1
+                orjinal_yol = hedef_tam_yol
+                while os.path.exists(hedef_tam_yol):
+                    hedef_tam_yol = f"{orjinal_yol}_{sayac}"
+                    sayac += 1
+                self.lbl_durum.setText(self.t("msg_cloning"))
+                self.konsol.yaz(f"> Depo klonlanıyor (Arka Plan İşlemi): {url}")
+                self._set_ui_lock(False)
+                self.btn_clone.setEnabled(False)
+                QApplication.processEvents()
+                self.isci = KlonlamaIsçisi(url, hedef_tam_yol)
+                self.isci.log_sinyali.connect(self.konsol.yaz)
+                self.isci.sonuc_sinyali.connect(self.klonlama_tamamlandi)
+                self.isci.start()
 
     def klonlama_tamamlandi(self, basarili, cikti, hedef_yol):
         if basarili:
@@ -1249,7 +1421,7 @@ class GitGUI(QMainWindow):
         else:
             self.combo_branches.addItem(self.t("combo_dal_sec"))
         self.combo_branches.blockSignals(False)
-        
+
     def dal_degistir(self, index):
         if index < 0: return
         hedef_dal = self.combo_branches.currentText()
@@ -1276,11 +1448,11 @@ class GitGUI(QMainWindow):
     def dal_sil(self):
         dallar, aktif = self.motor.get_branches()
         silinebilir = [d for d in dallar if d != aktif]
-        
+
         if not silinebilir:
             QMessageBox.warning(self, self.t("hata"), self.t("err_baska_dal_yok"))
             return
-            
+
         secim, ok = QInputDialog.getItem(self, self.t("dlg_dal_sil_baslik"), self.t("dlg_dal_sil_mesaj"), silinebilir, 0, False)
         if ok and secim:
             basarili, hata = self.motor.delete_branch(secim)
@@ -1303,13 +1475,13 @@ class GitGUI(QMainWindow):
     def dal_birlestir(self):
         dallar, aktif = self.motor.get_branches()
         birlestirilebilir = [d for d in dallar if d != aktif]
-        
+
         if not birlestirilebilir:
-            QMessageBox.warning(self, self.t("hata"), "Birleştirilecek başka bir dal bulunmuyor.")
+            QMessageBox.warning(self, self.t("hata"), self.t("err_no_merge_branch"))
             return
-            
+
         mesaj = self.t("dlg_merge_mesaj").format(aktif)
-        
+
         secim, ok = QInputDialog.getItem(self, self.t("dlg_merge_baslik"), mesaj, birlestirilebilir, 0, False)
         if ok and secim:
             basarili, hata = self.motor.merge_branch(secim)
@@ -1317,26 +1489,28 @@ class GitGUI(QMainWindow):
                 QMessageBox.information(self, self.t("basarili"), self.t("msg_merge_basarili").format(secim))
             else:
                 if hata == "conflict":
-                    QMessageBox.warning(self, self.t("hata"), self.t("msg_merge_conflict"))
+					# --- ÇAKIŞMA ÇÖZÜCÜ PENCERESİNİ ÇAĞIR ---
+                    dialog = CakismaCozucuDialog(self, self.motor, self.t)
+                    dialog.exec()
+                    # İşlem bitince commit ekranını tetikle
+                    self.git_commit()
                 else:
                     QMessageBox.critical(self, self.t("hata"), self.t("msg_dal_hata").format(hata))
             self.butonlari_guncelle()
 
     def git_sürüm_olustur(self):
         basarili, mevcut_taglar = self.motor.yerel_taglari_getir()
-
         dialog = QDialog(self)
         #dialog.setAttribute(Qt.WA_DeleteOnClose) # Fix Memory Leak
         dialog.setWindowTitle(self.t("dlg_tag_title"))
         dialog.resize(450, 350)
         dialog.setStyleSheet("QDialog { background-color: #1e1e24; } QLabel { color: #f5f5f7; }")
-        
         layout = QVBoxLayout(dialog)
 
         if basarili and mevcut_taglar:
-            lbl_mevcut = QLabel("📌 Mevcut Sürümler:")
+            lbl_mevcut = QLabel(self.t("lbl_mevcut_surumler"))
             layout.addWidget(lbl_mevcut)
-            
+
             txt_mevcut = QTextEdit()
             txt_mevcut.setReadOnly(True)
             txt_mevcut.setPlainText(mevcut_taglar)
@@ -1357,15 +1531,15 @@ class GitGUI(QMainWindow):
         layout.addWidget(input_tag)
 
         btn_layout = QHBoxLayout()
-        btn_ok = QPushButton("Tamam")
-        btn_ok.setDefault(True) 
+        btn_ok = QPushButton(self.t("btn_tamam"))
+        btn_ok.setDefault(True)
         btn_ok.setStyleSheet("QPushButton { background-color: #007acc; color: white; padding: 6px 15px; border-radius: 4px; font-weight: bold; } QPushButton:hover { background-color: #005999; }")
-        btn_cancel = QPushButton("İptal")
-        btn_cancel.setStyleSheet("QPushButton { background-color: #3f3f46; color: white; padding: 6px 15px; border-radius: 4px; font-weight: bold; } QPushButton:hover { background-color: #52525b; }")        
-        
+        btn_cancel = QPushButton(self.t("btn_iptal"))
+        btn_cancel.setStyleSheet("QPushButton { background-color: #3f3f46; color: white; padding: 6px 15px; border-radius: 4px; font-weight: bold; } QPushButton:hover { background-color: #52525b; }")
+
         btn_ok.clicked.connect(dialog.accept)
         btn_cancel.clicked.connect(dialog.reject)
-        
+
         btn_layout.addStretch()
         btn_layout.addWidget(btn_cancel)
         btn_layout.addWidget(btn_ok)
@@ -1373,13 +1547,13 @@ class GitGUI(QMainWindow):
 
         if dialog.exec() != QDialog.Accepted:
             return
-            
+
         tag_adi = input_tag.text().strip()
         if not tag_adi:
             return
-            
+
         tag_adi = tag_adi.replace(" ", "-")
-        
+
         aciklama, ok2 = QInputDialog.getText(self, self.t("dlg_tag_title"), self.t("dlg_tag_desc_msg"))
         if not ok2: return
 
@@ -1408,7 +1582,7 @@ class GitGUI(QMainWindow):
         self.surum_isci.start()
 
     def surum_tamamlandi(self, basarili, hata, tag_adi):
-        self.butonlari_guncelle() 
+        self.butonlari_guncelle()
         if basarili:
             QMessageBox.information(self, self.t("basarili"), self.t("msg_tag_basarili").format(tag_adi))
         else:
@@ -1426,7 +1600,11 @@ class GitGUI(QMainWindow):
             QMessageBox.information(self, self.t("basarili"), self.t("msg_rebase_basarili"))
         else:
             if sebep == "conflict":
-                QMessageBox.warning(self, self.t("hata"), self.t("msg_rebase_conflict"))
+				# --- ÇAKIŞMA ÇÖZÜCÜ PENCERESİNİ ÇAĞIR ---
+                dialog = CakismaCozucuDialog(self, self.motor, self.t)
+                dialog.exec()
+                # Rebase devam komutu
+                subprocess.run(["git", "rebase", "--continue"], cwd=self.motor.repo_path, env=self.motor.get_git_env())
             else:
                 QMessageBox.critical(self, self.t("hata"), self.t("msg_rebase_hata").format(sebep))
         self.butonlari_guncelle()
@@ -1475,16 +1653,16 @@ class GitGUI(QMainWindow):
         self.butonlari_guncelle()
 
     def git_tag_listele(self):
-        self.lbl_durum.setText("Yerel etiketler getiriliyor...")
+        self.lbl_durum.setText(self.t("msg_get_tags"))
         QApplication.processEvents()
 
         basarili, sonuc = self.motor.yerel_taglari_getir()
 
         if basarili:
-            self.konsol.yaz("--- YEREL ETİKETLER ---")
+            self.konsol.yaz(self.t("lbl_local_tags_header"))
             self.konsol.yaz(sonuc)
             self.konsol.yaz("-----------------------")
-            QMessageBox.information(self, "Yerel Etiketler", sonuc)
+            QMessageBox.information(self, self.t("lbl_local_tags"), sonuc)
         else:
             QMessageBox.critical(self, self.t("hata"), f"Etiketler alınamadı:\n{sonuc}")
 
@@ -1504,6 +1682,7 @@ class GitGUI(QMainWindow):
         """)
         layout.addWidget(liste)
 
+        # BURADAN İTİBAREN HİZALAMALAR DÜZELTİLDİ
         def listeyi_guncelle():
             liste.clear()
             for r in self.motor.get_remotes_list():
@@ -1552,7 +1731,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setApplicationName("Git_Gui")
     app.setDesktopFileName("Git_Gui")
-    
+
     # Tüm açılır pencereler ve standart widget'lar için global modern karanlık tema
     app.setStyleSheet("""
         QDialog, QMessageBox, QInputDialog, QFileDialog {
@@ -1592,6 +1771,56 @@ if __name__ == "__main__":
             background-color: #2a2a32;
             color: white;
             selection-background-color: #007acc;
+        }
+        /* Klasör Seçici Listeleri ve Başlıkları */
+        QTreeView, QListView {
+            background-color: #2a2a32;
+            color: #f5f5f7;
+            border: 1px solid #3f3f46;
+            border-radius: 4px;
+        }
+        QTreeView::item:selected, QListView::item:selected {
+            background-color: #007acc;
+            color: white;
+        }
+        QHeaderView::section {
+            background-color: #3f3f46;
+            color: white;
+            border: 1px solid #2a2a32;
+            padding: 4px;
+        }
+        /* QFileDialog içindeki görünmez siyah ikonları belirginleştirmek için */
+        QFileDialog QToolButton {
+            background-color: #a0a0ab;
+            border-radius: 4px;
+            margin: 2px;
+            padding: 2px;
+        }
+        QFileDialog QToolButton:hover {
+            background-color: #f4f4f5;
+        }
+        /* Sağ Tık Menüleri (Context Menu) */
+        QMenu {
+            background-color: #2a2a32;
+            color: #f5f5f7;
+            border: 1px solid #3f3f46;
+            border-radius: 4px;
+            padding: 4px;
+        }
+        QMenu::item {
+            padding: 6px 24px 6px 12px;
+            background-color: transparent;
+            border-radius: 4px;
+            margin: 2px;
+        }
+        QMenu::item:selected {
+            background-color: #007acc;
+            color: white;
+        }
+        QMenu::separator {
+            height: 1px;
+            background-color: #3f3f46;
+            margin: 4px 8px;
         }
     """)
 

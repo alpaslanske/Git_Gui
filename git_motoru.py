@@ -596,4 +596,26 @@ class GitMotoru:
             return True, "ok"
         except subprocess.CalledProcessError as e:
             self.komut_logla(f"HATA: {e.stderr}")
-            return False, e.stderr or "Bilinmeyen Hata"
+            return False, e.stderr or "Unknown error"
+            
+    def get_conflicted_files(self):
+        if not self.repo_exists: return []
+        try:
+            env = self.get_git_env()
+            # U harfi (Unmerged/Çakışmış) dosyaları getirir
+            res = subprocess.run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8')
+            return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+        except Exception as e:
+            self.komut_logla(f"HATA (Conflict List): {e}")
+            return []
+
+    def mark_resolved(self, dosya_yolu):
+        if not self.repo_exists: return False
+        try:
+            env = self.get_git_env()
+            self.komut_logla(f"> git add {dosya_yolu}")
+            subprocess.run(["git", "add", dosya_yolu], cwd=self.repo_path, env=env, check=True)
+            return True
+        except Exception as e:
+            self.komut_logla(f"HATA (Resolve): {e}")
+            return False
