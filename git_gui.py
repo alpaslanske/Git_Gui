@@ -1326,7 +1326,7 @@ class GitGUI(QMainWindow):
         basarili, mevcut_taglar = self.motor.yerel_taglari_getir()
 
         dialog = QDialog(self)
-        dialog.setAttribute(Qt.WA_DeleteOnClose) # Fix Memory Leak
+        #dialog.setAttribute(Qt.WA_DeleteOnClose) # Fix Memory Leak
         dialog.setWindowTitle(self.t("dlg_tag_title"))
         dialog.resize(450, 350)
         dialog.setStyleSheet("QDialog { background-color: #1e1e24; } QLabel { color: #f5f5f7; }")
