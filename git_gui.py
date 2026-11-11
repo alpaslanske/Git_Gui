@@ -567,8 +567,11 @@ class GitGUI(QMainWindow):
         self.btn_create_repo.setText(self.t("btn_create_repo"))
         self.btn_clone.setText(self.t("btn_clone"))
         self.btn_delete_repo.setText(self.t("btn_delete_repo"))
+        
         self.btn_fetch.setText(self.t("btn_fetch"))
+        self.btn_pull.setText(self.t("btn_pull")) 
         self.btn_push.setText(self.t("btn_push"))
+        
         self.btn_tag.setText(self.t("btn_tag"))
         self.lbl_gecmis_baslik.setText(self.t("lbl_gecmis"))
         self.konsol.lbl_baslik.setText(self.t("lbl_konsol"))
@@ -580,7 +583,6 @@ class GitGUI(QMainWindow):
         self.btn_dal_sil.setText(self.t("btn_dal_sil"))
         self.btn_dal_birlestir.setText(self.t("btn_dal_birlestir"))
         self.btn_clean_actions.setText(self.t("btn_clean_actions"))
-
 
         if self.combo_branches.count() == 1:
             self.combo_branches.setItemText(0, self.t("combo_dal_sec"))
@@ -824,11 +826,19 @@ class GitGUI(QMainWindow):
         fetch_delete_layout.addWidget(self.btn_delete_repo)
         sag_layout.addLayout(fetch_delete_layout)
 
+        # 5. Satır: Pull | Push to GitHub (İkili)
+        pull_push_layout = QHBoxLayout()
+        pull_push_layout.setSpacing(10)
 
-        # 5. Satır: Push to GitHub (Tek)
+        self.btn_pull = ModernButton("", "#0ea5e9") # Canlı mavi ton
+        self.btn_pull.clicked.connect(self.git_pull_baslat)
+        pull_push_layout.addWidget(self.btn_pull)
+
         self.btn_push = ModernButton("", "#8b5cf6")
         self.btn_push.clicked.connect(self.git_push)
-        sag_layout.addWidget(self.btn_push)
+        pull_push_layout.addWidget(self.btn_push)
+        
+        sag_layout.addLayout(pull_push_layout)
         
         # 6. Satır: Create Release (Tek)
         self.btn_tag = ModernButton("", "#4b5563")
@@ -1013,6 +1023,7 @@ class GitGUI(QMainWindow):
         self.btn_delete_repo.setEnabled(is_git)
         self.btn_clone.setEnabled(True)
         self.btn_fetch.setEnabled(is_git)
+        self.btn_pull.setEnabled(is_git)
         self.btn_push.setEnabled(is_git)
         self.btn_tag.setEnabled(is_git)
         self.btn_remotes.setEnabled(is_git)
@@ -1073,6 +1084,17 @@ class GitGUI(QMainWindow):
                     self.butonlari_guncelle()
 
     def git_pull_baslat(self):
+        cevap = QMessageBox.question(
+            self, 
+            self.t("emin_misiniz"), 
+            self.t("msg_pull_onay"),
+            QMessageBox.Yes | QMessageBox.No, 
+            QMessageBox.No
+        )
+        if cevap != QMessageBox.Yes:
+            return
+        # ----------------------------------
+
         self.konsol.yaz("> git pull işlemi başlatılıyor...")
         self._set_ui_lock(False)
         QApplication.processEvents()
@@ -1088,8 +1110,27 @@ class GitGUI(QMainWindow):
             self.konsol.yaz(mesaj)
             QMessageBox.information(self, self.t("basarili"), "Değişiklikler başarıyla çekildi (Pull tamamlandı).")
         else:
+            hata_mesaji = str(mesaj).lower()
             self.konsol.yaz(f"PULL HATASI:\n{mesaj}")
-            QMessageBox.critical(self, self.t("hata"), f"Pull işlemi sırasında hata oluştu. Muhtemelen yerel değişikliklerinizle çakışma (conflict) var:\n\n{mesaj}")
+            
+            # --- ÇAKIŞMA (CONFLICT) YAKALAYICI ---
+            if "conflict" in hata_mesaji or "çakışma" in hata_mesaji or "automatic merge failed" in hata_mesaji:
+                QMessageBox.warning(
+                    self, 
+                    self.t("hata"), 
+                    "Pull işlemi sırasında çakışma (conflict) tespit edildi!\n\nAynı dosyanın aynı satırları hem yerelde hem de GitHub'da değiştirilmiş. Şimdi çakışma çözücü ekranı açılacak."
+                )
+                
+                # Çakışma Çözücü Penceresini Aç
+                dialog = CakismaCozucuDialog(self, self.motor, self.t)
+                dialog.exec()
+                
+                # Kullanıcı çakışmaları çözdükten sonra birleştirme kaydı (Merge Commit) yapmak zorundadır
+                self.git_commit()
+            
+            # Çakışma dışındaki diğer hatalar (Bağlantı kopması vb.)
+            else:
+                QMessageBox.critical(self, self.t("hata"), f"Pull işlemi sırasında hata oluştu:\n\n{mesaj}")
 
     def gecmise_repo_ekle(self, path):
         if not hasattr(self, 'repo_history'):

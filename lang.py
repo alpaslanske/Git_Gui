@@ -179,9 +179,13 @@ METINLER = {
         "banner_not_git": "Git Klasörü Değil",
         "msg_release_pronoun": "GitHub Actions otomatik derlemesinin çalışması için sürüm adı 'v' harfi ile başlamalıdır!\n(Örn: v1.0.1)",
         "btn_clean_actions": "🧹 Actions Temizle",
-		"msg_clean_actions_confirm": "Tamamlanmış (completed) tüm GitHub Actions çalıştırma kayıtları kalıcı olarak silinecek.\n(Halen çalışmakta olan işlemlere dokunulmaz.)\n\nDevam etmek istiyor musunuz?",
-		"msg_clean_actions_empty": "Silinecek tamamlanmış workflow çalıştırması bulunamadı.",
-		"msg_clean_actions_success": "Toplam {} adet tamamlanmış workflow kaydı temizlendi.",
+        "msg_clean_actions_confirm": "Tamamlanmış (completed) tüm GitHub Actions çalıştırma kayıtları kalıcı olarak silinecek.\n(Halen çalışmakta olan işlemlere dokunulmaz.)\n\nDevam etmek istiyor musunuz?",
+        "msg_clean_actions_empty": "Silinecek tamamlanmış workflow çalıştırması bulunamadı.",
+        "msg_clean_actions_success": "Toplam {} adet tamamlanmış workflow kaydı temizlendi.",
+        "fetch_no_remote": "Bağlı bir GitHub adresi (remote) bulunamadı.",
+        "btn_pull": "⏬ Değişiklikleri Çek (Pull)",
+        "btn_delete_commit": "🗑️ Commit Sil",
+        "msg_pull_onay": "Uzak sunucudaki (GitHub) değişiklikler yerel deponuzla birleştirilecek (Pull).\n\nDevam etmek istiyor musunuz?",
         "dlg_squash_warn_msg": "Uyarı: Commit birleştirme (Squash) işlemi lineer (Merge olmayan) geçmişlerde sorunsuz çalışır.\nAraya karışmış dal birleştirmeleri varsa hata verebilir.\n\nDevam etmek istiyor musunuz?"
     },
 
@@ -365,9 +369,13 @@ METINLER = {
         "banner_not_git": "Not a Git Repository",
         "msg_release_pronoun": "For the GitHub Actions automated build to work, the version name must begin with the letter 'v'! (e.g., v1.0.1)",
         "btn_clean_actions": "🧹 Clean Actions",
-		"msg_clean_actions_confirm": "All completed GitHub Actions workflow runs will be permanently deleted.\n(Currently running workflows will NOT be affected.)\n\nDo you want to continue?",
-		"msg_clean_actions_empty": "No completed workflow runs found to delete.",
-		"msg_clean_actions_success": "Successfully deleted {} completed workflow runs.",
+        "msg_clean_actions_confirm": "All completed GitHub Actions workflow runs will be permanently deleted.\n(Currently running workflows will NOT be affected.)\n\nDo you want to continue?",
+        "msg_clean_actions_empty": "No completed workflow runs found to delete.",
+        "msg_clean_actions_success": "Successfully deleted {} completed workflow runs.",
+        "fetch_no_remote": "No remote repository configured.",
+        "btn_pull": "⏬ Pull Changes",
+        "btn_delete_commit": "🗑️ Delete Commit",
+        "msg_pull_onay": "Remote changes will be merged into your local repository (Pull).\n\nDo you want to continue?",
         "dlg_squash_warn_msg": "Warning: Squashing commits works best on linear history (no Merges).\nIt might fail if there are merge commits in between.\n\nDo you want to proceed?"
     }
 }
