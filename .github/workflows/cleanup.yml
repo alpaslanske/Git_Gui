@@ -1,0 +1,17 @@
+name: Bitmiş Çalıştırmaları Temizle
+on:
+  workflow_dispatch: # İstediğiniz zaman Actions sekmesinden manuel çalıştırın
+  schedule:
+    - cron: '0 3 * * *' # Her gece 03:00'te otomatik çalışır
+
+permissions:
+  actions: write
+
+jobs:
+  delete-completed-runs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: Mattraks/delete-workflow-runs@v2
+        with:
+          retain_days: 0       # Bitmiş olan tüm günleri sil
+          keep_minimum_runs: 0 # Hiçbir eski kaydı tutma (çalışanlar hariç)

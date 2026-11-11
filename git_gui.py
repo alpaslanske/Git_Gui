@@ -176,6 +176,48 @@ class LoginIscisi(QThread):
         except Exception as e:
             self.sonuc_sinyali.emit(False, str(e))
 
+# ==========================================
+# Github Clean-Up Worker
+# ==========================================
+class ActionsTemizleIscisi(QThread):
+    sonuc_sinyali = Signal(bool, str)
+    log_sinyali = Signal(str)
+
+    def __init__(self, repo_path):
+        super().__init__()
+        self.repo_path = repo_path
+
+    def run(self):
+        try:
+            self.log_sinyali.emit("> Tamamlanmış GitHub Actions çalıştırmaları taranıyor...")
+            res = subprocess.run(
+                ["gh", "run", "list", "--status", "completed", "--limit", "500", "--json", "databaseId", "-q", ".[].databaseId"],
+                cwd=self.repo_path, capture_output=True, text=True, encoding="utf-8", errors="replace"
+            )
+            if res.returncode != 0:
+                self.sonuc_sinyali.emit(False, res.stderr.strip() or "GitHub CLI (gh) hatası.")
+                return
+
+            run_ids = [r.strip() for r in res.stdout.strip().splitlines() if r.strip()]
+            if not run_ids:
+                self.sonuc_sinyali.emit(True, "0")
+                return
+
+            silinen_sayisi = 0
+            for run_id in run_ids:
+                del_res = subprocess.run(
+                    ["gh", "run", "delete", run_id],
+                    cwd=self.repo_path, capture_output=True, text=True, encoding="utf-8", errors="replace"
+                )
+                if del_res.returncode == 0:
+                    silinen_sayisi += 1
+                    self.log_sinyali.emit(f"  ✓ Silindi: Run #{run_id}")
+
+            self.sonuc_sinyali.emit(True, str(silinen_sayisi))
+        except FileNotFoundError:
+            self.sonuc_sinyali.emit(False, "Sistemde 'gh' (GitHub CLI) kurulu değil.")
+        except Exception as e:
+            self.sonuc_sinyali.emit(False, str(e))
 
 # ==========================================
 # ARAYÜZ (UI) BİLEŞENLERİ
@@ -537,6 +579,8 @@ class GitGUI(QMainWindow):
         self.btn_yeni_dal.setText(self.t("btn_yeni_dal"))
         self.btn_dal_sil.setText(self.t("btn_dal_sil"))
         self.btn_dal_birlestir.setText(self.t("btn_dal_birlestir"))
+        self.btn_clean_actions.setText(self.t("btn_clean_actions"))
+
 
         if self.combo_branches.count() == 1:
             self.combo_branches.setItemText(0, self.t("combo_dal_sec"))
@@ -744,10 +788,17 @@ class GitGUI(QMainWindow):
         self.btn_login.clicked.connect(self.github_login)
         sag_layout.addWidget(self.btn_login)
 
-        # 2. Satır: Manage Remotes (Tek)
+        # 2. Satır: Manage Remotes | Actions Temizle (İkili)
+        remotes_actions_layout = QHBoxLayout()
+        remotes_actions_layout.setSpacing(10)
         self.btn_remotes = ModernButton("", "#3b82f6")
         self.btn_remotes.clicked.connect(self.yonet_remotes)
-        sag_layout.addWidget(self.btn_remotes)
+        remotes_actions_layout.addWidget(self.btn_remotes)
+
+        self.btn_clean_actions = ModernButton("", "#6366f1")
+        self.btn_clean_actions.clicked.connect(self.actions_gecmisi_temizle)
+        remotes_actions_layout.addWidget(self.btn_clean_actions)
+        sag_layout.addLayout(remotes_actions_layout)
 
         # 3. Satır: Create Repo | Clone Repo (İkili)
         create_clone_layout = QHBoxLayout()
@@ -969,6 +1020,7 @@ class GitGUI(QMainWindow):
         self.btn_yeni_dal.setEnabled(is_git)
         self.btn_dal_sil.setEnabled(is_git)
         self.btn_dal_birlestir.setEnabled(is_git)
+        self.btn_clean_actions.setEnabled(is_git)
 
     def git_fetch_kontrol(self):
         # lbl_durum kaldırıldığı için mesajı konsola yazdırıyoruz
@@ -1518,7 +1570,7 @@ class GitGUI(QMainWindow):
                 QMessageBox.information(self, self.t("basarili"), self.t("msg_merge_basarili").format(secim))
             else:
                 if hata == "conflict":
-					# --- ÇAKIŞMA ÇÖZÜCÜ PENCERESİNİ ÇAĞIR ---
+                    # --- ÇAKIŞMA ÇÖZÜCÜ PENCERESİNİ ÇAĞIR ---
                     dialog = CakismaCozucuDialog(self, self.motor, self.t)
                     dialog.exec()
                     # İşlem bitince commit ekranını tetikle
@@ -1635,7 +1687,7 @@ class GitGUI(QMainWindow):
             QMessageBox.information(self, self.t("basarili"), self.t("msg_rebase_basarili"))
         else:
             if sebep == "conflict":
-				# --- ÇAKIŞMA ÇÖZÜCÜ PENCERESİNİ ÇAĞIR ---
+                # --- ÇAKIŞMA ÇÖZÜCÜ PENCERESİNİ ÇAĞIR ---
                 dialog = CakismaCozucuDialog(self, self.motor, self.t)
                 dialog.exec()
                 # Rebase devam komutu
@@ -1703,6 +1755,35 @@ class GitGUI(QMainWindow):
 
         self.butonlari_guncelle()
 
+    def actions_gecmisi_temizle(self):
+      if not self.motor.repo_path:
+          return
+      cevap = QMessageBox.question(
+          self, "GitHub Actions", self.t("msg_clean_actions_confirm"),
+          QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+      )
+      if cevap != QMessageBox.Yes:
+          return
+
+      self._set_ui_lock(False)
+      QApplication.processEvents()
+
+      self.actions_isci = ActionsTemizleIscisi(self.motor.repo_path)
+      self.actions_isci.log_sinyali.connect(self.konsol.yaz)
+      self.actions_isci.sonuc_sinyali.connect(self.actions_temizleme_tamamlandi)
+      self.actions_isci.start()
+
+    def actions_temizleme_tamamlandi(self, basarili, mesaj):
+      self.butonlari_guncelle()
+      if basarili:
+          if mesaj == "0":
+              QMessageBox.information(self, self.t("basarili"), self.t("msg_clean_actions_empty"))
+          else:
+              QMessageBox.information(self, self.t("basarili"), self.t("msg_clean_actions_success").format(mesaj))
+      else:
+          QMessageBox.critical(self, self.t("hata"), mesaj)
+
+
     def yonet_remotes(self):
         dialog = QDialog(self)
         dialog.setAttribute(Qt.WA_DeleteOnClose) # Fix Memory Leak
@@ -1761,7 +1842,7 @@ class GitGUI(QMainWindow):
         btn_sil.clicked.connect(sil)
 
         dialog.exec()
-
+#----------------------------------------------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setApplicationName("Git_Gui")
