@@ -670,95 +670,124 @@ class GitGUI(QMainWindow):
         self.lbl_durum.setAlignment(Qt.AlignCenter)
         top_layout.addWidget(self.lbl_durum)
         main_layout.addWidget(frame_top)
-
+#------------
         orta_layout = QHBoxLayout()
         orta_layout.setSpacing(20)
 
+        # ==========================================
+        # SOL SÜTUN (TOPLAM 6 SATIR)
+        # ==========================================
         sol_layout = QVBoxLayout()
         sol_layout.setSpacing(10)
+
+        # 1. Satır: Git Init (Tek)
         self.btn_init = ModernButton("", "#28a745")
         self.btn_init.clicked.connect(self.git_init)
         sol_layout.addWidget(self.btn_init)
 
+        # 2. Satır: Commit (Tek)
         self.btn_commit = ModernButton("", "#d97706")
         self.btn_commit.clicked.connect(self.git_commit)
         sol_layout.addWidget(self.btn_commit)
 
+        # 3. Satır: Delete Commit | Rollback (İkili)
+        del_roll_layout = QHBoxLayout()
+        del_roll_layout.setSpacing(10)
         self.btn_delete_commit = ModernButton("", "#b91c1c")
         self.btn_delete_commit.clicked.connect(self.git_commit_sil)
-        sol_layout.addWidget(self.btn_delete_commit)
+        del_roll_layout.addWidget(self.btn_delete_commit)
 
         self.btn_rollback = ModernButton("", "#dc3545")
         self.btn_rollback.clicked.connect(self.git_rollback)
-        sol_layout.addWidget(self.btn_rollback)
+        del_roll_layout.addWidget(self.btn_rollback)
+        sol_layout.addLayout(del_roll_layout)
 
-        self.btn_rebase = ModernButton("", "#475569")
-        self.btn_rebase.clicked.connect(self.git_rebase)
-
-        self.btn_yeni_dal = ModernButton("", "#10b981") # Zümrüt Yeşili
+        # 4. Satır: Yeni Dal | Dal Sil (İkili)
+        branch_crud_layout = QHBoxLayout()
+        branch_crud_layout.setSpacing(10)
+        self.btn_yeni_dal = ModernButton("", "#10b981")
         self.btn_yeni_dal.clicked.connect(self.yeni_dal_olustur)
-        sol_layout.addWidget(self.btn_yeni_dal)
+        branch_crud_layout.addWidget(self.btn_yeni_dal)
 
-        self.btn_dal_sil = ModernButton("", "#f43f5e") # Gül Kurusu
+        self.btn_dal_sil = ModernButton("", "#f43f5e")
         self.btn_dal_sil.clicked.connect(self.dal_sil)
-        sol_layout.addWidget(self.btn_dal_sil)
+        branch_crud_layout.addWidget(self.btn_dal_sil)
+        sol_layout.addLayout(branch_crud_layout)
 
-        self.btn_dal_birlestir = ModernButton("", "#8b5cf6") # Mor renk
+        # 5. Satır: Dal Birleştir (Tek)
+        self.btn_dal_birlestir = ModernButton("", "#8b5cf6")
         self.btn_dal_birlestir.clicked.connect(self.dal_birlestir)
         sol_layout.addWidget(self.btn_dal_birlestir)
 
-        sol_layout.addWidget(self.btn_rebase)
-        orta_layout.addLayout(sol_layout)
+        # 6. Satır: Rebase | Squash (İkili)
+        rebase_squash_layout = QHBoxLayout()
+        rebase_squash_layout.setSpacing(10)
+        self.btn_rebase = ModernButton("", "#475569")
+        self.btn_rebase.clicked.connect(self.git_rebase)
+        rebase_squash_layout.addWidget(self.btn_rebase)
 
+        self.btn_squash = ModernButton("", "#0891b2")
+        self.btn_squash.clicked.connect(self.git_squash)
+        rebase_squash_layout.addWidget(self.btn_squash)
+        sol_layout.addLayout(rebase_squash_layout)
+
+        orta_layout.addLayout(sol_layout, 1)
+
+        # ==========================================
+        # SAĞ SÜTUN (TOPLAM 6 SATIR)
+        # ==========================================
         sag_layout = QVBoxLayout()
         sag_layout.setSpacing(10)
+
+        # 1. Satır: GitHub Login (Tek)
         self.btn_login = ModernButton("", "#0284c7")
         self.btn_login.clicked.connect(self.github_login)
         sag_layout.addWidget(self.btn_login)
 
+        # 2. Satır: Manage Remotes (Tek)
+        self.btn_remotes = ModernButton("", "#3b82f6")
+        self.btn_remotes.clicked.connect(self.yonet_remotes)
+        sag_layout.addWidget(self.btn_remotes)
+
+        # 3. Satır: Create Repo | Clone Repo (İkili)
         create_clone_layout = QHBoxLayout()
         create_clone_layout.setSpacing(10)
         self.btn_create_repo = ModernButton("", "#0f766e")
         self.btn_create_repo.clicked.connect(self.github_repo_olustur)
         create_clone_layout.addWidget(self.btn_create_repo)
+
         self.btn_clone = ModernButton("", "#0369a1")
         self.btn_clone.clicked.connect(self.github_repo_indir)
         create_clone_layout.addWidget(self.btn_clone)
         sag_layout.addLayout(create_clone_layout)
 
-        push_remotes_layout = QHBoxLayout()
-        push_remotes_layout.setSpacing(10)
-        self.btn_remotes = ModernButton("", "#3b82f6")
-        self.btn_remotes.clicked.connect(self.yonet_remotes)
-        push_remotes_layout.addWidget(self.btn_remotes)
-        self.btn_push = ModernButton("", "#8b5cf6")
-        self.btn_push.clicked.connect(self.git_push)
-        push_remotes_layout.addWidget(self.btn_push)
-        sag_layout.addLayout(push_remotes_layout)
-
+        # 4. Satır: Check Updates | Delete Repo (İkili)
         fetch_delete_layout = QHBoxLayout()
         fetch_delete_layout.setSpacing(10)
         self.btn_fetch = ModernButton("", "#28a745")
         self.btn_fetch.clicked.connect(self.git_fetch_kontrol)
         fetch_delete_layout.addWidget(self.btn_fetch)
+
         self.btn_delete_repo = ModernButton("", "#991b1b")
         self.btn_delete_repo.clicked.connect(self.repo_sil)
         fetch_delete_layout.addWidget(self.btn_delete_repo)
         sag_layout.addLayout(fetch_delete_layout)
 
-        tag_squash_layout = QHBoxLayout()
-        tag_squash_layout.setSpacing(10)
+
+        # 5. Satır: Push to GitHub (Tek)
+        self.btn_push = ModernButton("", "#8b5cf6")
+        self.btn_push.clicked.connect(self.git_push)
+        sag_layout.addWidget(self.btn_push)
+        
+        # 6. Satır: Create Release (Tek)
         self.btn_tag = ModernButton("", "#4b5563")
         self.btn_tag.clicked.connect(self.git_sürüm_olustur)
-        tag_squash_layout.addWidget(self.btn_tag)
-        self.btn_squash = ModernButton("", "#0891b2")
-        self.btn_squash.clicked.connect(self.git_squash)
-        tag_squash_layout.addWidget(self.btn_squash)
-        sag_layout.addLayout(tag_squash_layout)
+        sag_layout.addWidget(self.btn_tag)
 
-        orta_layout.addLayout(sag_layout)
+        orta_layout.addLayout(sag_layout, 1)
         main_layout.addLayout(orta_layout)
 
+#-------
         self.lbl_gecmis_baslik = QLabel("")
         gecmis_font = self.lbl_gecmis_baslik.font()
         gecmis_font.setBold(True)
