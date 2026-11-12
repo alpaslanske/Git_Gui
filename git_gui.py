@@ -270,7 +270,7 @@ class CakismaCozucuDialog(QDialog):
         self.setWindowTitle(self.t("dlg_conflict_title"))
         self.resize(1000, 600)
         self.setModal(True)
-        self.setObjectName("CardFlat") # Temaya uydurmak için
+        self.setObjectName("CardFlat")
 
         layout = QHBoxLayout(self)
 
@@ -293,19 +293,27 @@ class CakismaCozucuDialog(QDialog):
         sag_layout = QVBoxLayout()
         
         buton_layout = QHBoxLayout()
-        self.btn_mevcut_koru = ModernButton(self.t("btn_resolve_current"), "Primary")
-        self.btn_mevcut_koru.setStyleSheet("background-color: #059669; color: white;") # Yeşil
+        
+        # MEVCUT BUTONLAR KORUNDU
+        self.btn_mevcut_koru = ModernButton("👇 Mevcudu Koru", "Primary")
+        self.btn_mevcut_koru.setStyleSheet("background-color: #059669; color: white;") # Yeşil[cite: 2]
         self.btn_mevcut_koru.clicked.connect(lambda: self.kod_koru("mevcut"))
         
-        self.btn_gelen_koru = ModernButton(self.t("btn_resolve_incoming"), "Primary")
-        self.btn_gelen_koru.setStyleSheet("background-color: #2563eb; color: white;") # Mavi
+        self.btn_gelen_koru = ModernButton("👇 Geleni Koru", "Primary")
+        self.btn_gelen_koru.setStyleSheet("background-color: #2563eb; color: white;") # Mavi[cite: 2]
         self.btn_gelen_koru.clicked.connect(lambda: self.kod_koru("gelen"))
+
+        # YENİ EKLENEN 3. BUTON
+        self.btn_ikisini_koru = ModernButton("🤝 İkisini de Koru", "Primary")
+        self.btn_ikisini_koru.setStyleSheet("background-color: #7c3aed; color: white;") # Mor
+        self.btn_ikisini_koru.clicked.connect(lambda: self.kod_koru("ikisi"))
         
         self.btn_cozuldu = ModernButton(self.t("btn_mark_resolved"), "Primary")
         self.btn_cozuldu.clicked.connect(self.cozuldu_isaretle)
 
         buton_layout.addWidget(self.btn_mevcut_koru)
         buton_layout.addWidget(self.btn_gelen_koru)
+        buton_layout.addWidget(self.btn_ikisini_koru) # Araya yerleştirildi
         buton_layout.addStretch()
         buton_layout.addWidget(self.btn_cozuldu)
         sag_layout.addLayout(buton_layout)
@@ -338,48 +346,55 @@ class CakismaCozucuDialog(QDialog):
             self.renklendir()
 
     def renklendir(self):
-        # <<<<<<< HEAD ve >>>>>>> arasını HTML ile renklendirme
         icerik = self.kod_editor.toPlainText()
-        # Çakışma bloklarını bulup arka planlarını boyarız (Görsel Yardım)
-        icerik = icerik.replace("<<<<<<<", "<span style='background-color: #4A1620; color: white; display:block;'><b><<<<<<< (MEVCUT KOD)</b>")
-        icerik = icerik.replace("=======", "</span><span style='background-color: #0E7490; color: white; display:block;'><b>======= (AYIRICI)</b>")
-        icerik = icerik.replace(">>>>>>>", "</span><span style='background-color: #164E63; color: white; display:block;'><b>>>>>>>> (GELEN KOD)</b></span>")
+        
+        # 1. PySide6 HTML ayrıştırıcısı "<" ve ">" işaretlerini gizli HTML etiketleri sanmasın diye escape ediyoruz
+        icerik = icerik.replace("<", "&lt;").replace(">", "&gt;")
+        
+        # 2. Renk bloklarını (span) açıyoruz. Açılan span, diğer işarete kadar tüm alt satırları boyayacak
+        # (Regex'i bozmamak için araya ekstra metin eklemiyoruz)
+        icerik = icerik.replace("&lt;&lt;&lt;&lt;&lt;&lt;&lt;", "<span style='background-color: #4A1620; color: white;'>&lt;&lt;&lt;&lt;&lt;&lt;&lt;")
+        icerik = icerik.replace("=======", "</span><span style='background-color: #0E7490; color: white;'>=======")
+        icerik = icerik.replace("&gt;&gt;&gt;&gt;&gt;&gt;&gt;", "</span><span style='background-color: #164E63; color: white;'>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</span>")
+        
+        # 3. Satır sonlarını HTML <br> etiketine çevirip ekrana basıyoruz
         self.kod_editor.setHtml(icerik.replace("\n", "<br>"))
-
     def kod_koru(self, secim):
         icerik = self.kod_editor.toPlainText()
-        # Düzenli ifade ile çakışma bloklarını temizler, seçileni tutar
-        pattern = r"<<<<<<<.*?\n(.*?)=======\n(.*?)>>>>>>>.*?\n"
+        
+        #[cite: 2] Regex deseni iyileştirildi: Dal isimlerini (örn: >>>>>>> yeni_dal) dinamik olarak temizler
+        pattern = r"<<<<<<<[^\n]*\n(.*?)=======\n(.*?)>>>>>>>[^\n]*(?:\n|$)"
         
         def replacer(match):
             mevcut = match.group(1)
             gelen = match.group(2)
-            return mevcut if secim == "mevcut" else gelen
+            if secim == "mevcut":
+                return mevcut
+            elif secim == "gelen":
+                return gelen
+            else:
+                # İkisini de Koru seçimi: Mevcut ve gelen kod alt alta eklenir
+                return mevcut + gelen
 
         yeni_icerik = re.sub(pattern, replacer, icerik, flags=re.DOTALL)
         self.kod_editor.setPlainText(yeni_icerik)
 
     def cozuldu_isaretle(self):
         if not self.secili_dosya_yolu: return
-        # Dosyayı kaydet
         yeni_icerik = self.kod_editor.toPlainText()
         with open(self.secili_dosya_yolu, 'w', encoding='utf-8') as f:
             f.write(yeni_icerik)
         
-        # Git add
         self.motor.mark_resolved(self.secili_dosya_yolu)
         QMessageBox.information(self, "Git", self.t("msg_conflict_saved"))
         
-        # Listeden kaldır
         self.list_dosyalar.takeItem(self.list_dosyalar.currentRow())
         self.kod_editor.clear()
         
-        # Hepsi bittiyse tamamla butonunu aç
         if self.list_dosyalar.count() == 0:
             self.btn_tamamla.setEnabled(True)
 
     def birlestirmeyi_tamamla(self):
-        # Kalan işlem commit yapmaktır
         QMessageBox.information(self, "Git", self.t("msg_all_resolved"))
         self.accept()
 
