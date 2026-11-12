@@ -797,6 +797,7 @@ class GitGUI(QMainWindow):
         # ==========================================
         # SAĞ SÜTUN (TOPLAM 6 SATIR)
         # ==========================================
+
         sag_layout = QVBoxLayout()
         sag_layout.setSpacing(10)
 
@@ -805,19 +806,19 @@ class GitGUI(QMainWindow):
         self.btn_login.clicked.connect(self.github_login)
         sag_layout.addWidget(self.btn_login)
 
-        # 2. Satır: Manage Remotes | Actions Temizle (İkili)
-        remotes_actions_layout = QHBoxLayout()
-        remotes_actions_layout.setSpacing(10)
+        # 2. Satır: Manage Remotes | Repoyu Sil (İkili)
+        remotes_delete_layout = QHBoxLayout()
+        remotes_delete_layout.setSpacing(10)
         self.btn_remotes = ModernButton("", "#3b82f6")
         self.btn_remotes.clicked.connect(self.yonet_remotes)
-        remotes_actions_layout.addWidget(self.btn_remotes)
+        remotes_delete_layout.addWidget(self.btn_remotes)
 
-        self.btn_clean_actions = ModernButton("", "#6366f1")
-        self.btn_clean_actions.clicked.connect(self.actions_gecmisi_temizle)
-        remotes_actions_layout.addWidget(self.btn_clean_actions)
-        sag_layout.addLayout(remotes_actions_layout)
+        self.btn_delete_repo = ModernButton("", "#991b1b")
+        self.btn_delete_repo.clicked.connect(self.repo_sil)
+        remotes_delete_layout.addWidget(self.btn_delete_repo)
+        sag_layout.addLayout(remotes_delete_layout)
 
-        # 3. Satır: Create Repo | Clone Repo (İkili)
+        # 3. Satır: Yeni Depo Oluştur | GitHub'dan Repo İndir (Actions Temizle ile yer değişti)
         create_clone_layout = QHBoxLayout()
         create_clone_layout.setSpacing(10)
         self.btn_create_repo = ModernButton("", "#0f766e")
@@ -829,39 +830,38 @@ class GitGUI(QMainWindow):
         create_clone_layout.addWidget(self.btn_clone)
         sag_layout.addLayout(create_clone_layout)
 
-        # 4. Satır: Check Updates | Delete Repo (İkili)
-        fetch_delete_layout = QHBoxLayout()
-        fetch_delete_layout.setSpacing(10)
+        # 4. Satır: Check Updates | Değişiklikleri Çek (İkili)
+        fetch_pull_layout = QHBoxLayout()
+        fetch_pull_layout.setSpacing(10)
         self.btn_fetch = ModernButton("", "#28a745")
         self.btn_fetch.clicked.connect(self.git_fetch_kontrol)
-        fetch_delete_layout.addWidget(self.btn_fetch)
+        fetch_pull_layout.addWidget(self.btn_fetch)
 
-        self.btn_delete_repo = ModernButton("", "#991b1b")
-        self.btn_delete_repo.clicked.connect(self.repo_sil)
-        fetch_delete_layout.addWidget(self.btn_delete_repo)
-        sag_layout.addLayout(fetch_delete_layout)
-
-        # 5. Satır: Pull | Push to GitHub (İkili)
-        pull_push_layout = QHBoxLayout()
-        pull_push_layout.setSpacing(10)
-
-        self.btn_pull = ModernButton("", "#0ea5e9") # Canlı mavi ton
+        self.btn_pull = ModernButton("", "#0ea5e9")
         self.btn_pull.clicked.connect(self.git_pull_baslat)
-        pull_push_layout.addWidget(self.btn_pull)
+        fetch_pull_layout.addWidget(self.btn_pull)
+        sag_layout.addLayout(fetch_pull_layout)
 
-        self.btn_push = ModernButton("", "#8b5cf6")
-        self.btn_push.clicked.connect(self.git_push)
-        pull_push_layout.addWidget(self.btn_push)
-        
-        sag_layout.addLayout(pull_push_layout)
-        
-        # 6. Satır: Create Release (Tek)
+        # 5. Satır: Sürüm Oluştur | Actions Temizle (Clone Repo ile yer değişti)
+        tag_actions_layout = QHBoxLayout()
+        tag_actions_layout.setSpacing(10)
         self.btn_tag = ModernButton("", "#4b5563")
         self.btn_tag.clicked.connect(self.git_sürüm_olustur)
-        sag_layout.addWidget(self.btn_tag)
+        tag_actions_layout.addWidget(self.btn_tag)
+
+        self.btn_clean_actions = ModernButton("", "#6366f1")
+        self.btn_clean_actions.clicked.connect(self.actions_gecmisi_temizle)
+        tag_actions_layout.addWidget(self.btn_clean_actions)
+        sag_layout.addLayout(tag_actions_layout)
+
+        # 6. Satır: GitHub'a Yükle (Tek)
+        self.btn_push = ModernButton("", "#8b5cf6")
+        self.btn_push.clicked.connect(self.git_push)
+        sag_layout.addWidget(self.btn_push)
 
         orta_layout.addLayout(sag_layout, 1)
         main_layout.addLayout(orta_layout)
+
 
 #-------
         self.lbl_gecmis_baslik = QLabel("")
@@ -1709,11 +1709,36 @@ class GitGUI(QMainWindow):
             QMessageBox.No
         )
         if cevap == QMessageBox.Yes:
-            dosya_yolu, _ = QFileDialog.getOpenFileName(
-                self,
-                self.t("dlg_select_file"),
-                self.motor.repo_path
-            )
+            file_dialog = QFileDialog(self)
+            file_dialog.setWindowTitle(self.t("dlg_select_file"))
+            file_dialog.setDirectory(self.motor.repo_path)
+            file_dialog.setFileMode(QFileDialog.ExistingFile)
+            
+            # Yerel sistem penceresi yerine uygulamanın kendi karanlık QSS temasını kullan
+            file_dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+            
+            # Pencere boyutu ve detaylı liste görünümü
+            file_dialog.setMinimumSize(780, 600)
+            file_dialog.resize(780, 600)
+            file_dialog.setViewMode(QFileDialog.Detail)
+
+            # Sol panele (Sidebar) mount edilmiş diskleri ekle (Diğer pencerelerle bütünlük için)
+            from PySide6.QtCore import QStorageInfo, QUrl
+            kisayollar = file_dialog.sidebarUrls()
+            for disk in QStorageInfo.mountedVolumes():
+                if disk.isValid() and disk.isReady():
+                    fs_type = bytes(disk.fileSystemType()).decode("utf-8", errors="ignore")
+                    if fs_type not in ["tmpfs", "devtmpfs", "proc", "sysfs", "cgroup", "squashfs", "overlay", "efivarfs", "tracefs"]:
+                        disk_url = QUrl.fromLocalFile(disk.rootPath())
+                        if disk_url not in kisayollar:
+                            kisayollar.append(disk_url)
+            file_dialog.setSidebarUrls(kisayollar)
+            
+            if file_dialog.exec():
+                secilenler = file_dialog.selectedFiles()
+                if secilenler:
+                    dosya_yolu = secilenler[0]
+
 
         self.lbl_durum.setText(self.t("msg_creating_tag"))
         self._set_ui_lock(False)
@@ -1906,14 +1931,22 @@ if __name__ == "__main__":
 
     # Tüm açılır pencereler ve standart widget'lar için global modern karanlık tema
     app.setStyleSheet("""
-        QDialog, QMessageBox, QInputDialog, QFileDialog {
+        QDialog, QMessageBox, QInputDialog {
             background-color: #1e1e24;
+            color: #f5f5f7;
+        }
+        /* QFileDialog'u global karanlık temadan Hariç Tutuyoruz (Yazıların görünmesi için) */
+        QFileDialog {
+            background-color: #2a2a32;
+            color: #f5f5f7;
+        }
+        QFileDialog QLabel, QFileDialog QPushButton, QFileDialog QCheckBox, QFileDialog QRadioButton {
             color: #f5f5f7;
         }
         QDialog QLabel, QMessageBox QLabel {
             color: #f5f5f7;
         }
-        QDialog QPushButton, QMessageBox QPushButton, QInputDialog QPushButton {
+        QDialog QPushButton, QMessageBox QPushButton, QInputDialog QPushButton, QFileDialog QPushButton {
             background-color: #3f3f46;
             color: white;
             border: none;
@@ -1922,31 +1955,31 @@ if __name__ == "__main__":
             min-width: 60px;
             font-weight: bold;
         }
-        QDialog QPushButton:hover, QMessageBox QPushButton:hover, QInputDialog QPushButton:hover {
+        QDialog QPushButton:hover, QMessageBox QPushButton:hover, QInputDialog QPushButton:hover, QFileDialog QPushButton:hover {
             background-color: #007acc;
         }
-        QDialog QLineEdit, QInputDialog QLineEdit {
-            background-color: #2a2a32;
+        QDialog QLineEdit, QInputDialog QLineEdit, QFileDialog QLineEdit {
+            background-color: #1e1e24;
             color: white;
             border: 1px solid #3f3f46;
             border-radius: 4px;
             padding: 6px;
         }
-        QDialog QComboBox, QInputDialog QComboBox {
+        QDialog QComboBox, QInputDialog QComboBox, QFileDialog QComboBox {
             background-color: #3f3f46;
             color: white;
             border: 1px solid #52525b;
             border-radius: 4px;
             padding: 4px;
         }
-        QDialog QComboBox QAbstractItemView {
+        QDialog QComboBox QAbstractItemView, QFileDialog QComboBox QAbstractItemView {
             background-color: #2a2a32;
             color: white;
             selection-background-color: #007acc;
         }
-        /* Klasör Seçici Listeleri ve Başlıkları */
+        /* Klasör Seçici Listeleri ve Tabloları */
         QTreeView, QListView {
-            background-color: #2a2a32;
+            background-color: #1e1e24;
             color: #f5f5f7;
             border: 1px solid #3f3f46;
             border-radius: 4px;
@@ -1958,18 +1991,18 @@ if __name__ == "__main__":
         QHeaderView::section {
             background-color: #3f3f46;
             color: white;
-            border: 1px solid #2a2a32;
+            border: 1px solid #1e1e24;
             padding: 4px;
         }
-        /* QFileDialog içindeki görünmez siyah ikonları belirginleştirmek için */
+        /* QFileDialog içindeki araç çubuğu ikonları */
         QFileDialog QToolButton {
-            background-color: #a0a0ab;
+            background-color: #3f3f46;
             border-radius: 4px;
             margin: 2px;
             padding: 2px;
         }
         QFileDialog QToolButton:hover {
-            background-color: #f4f4f5;
+            background-color: #007acc;
         }
         /* Sağ Tık Menüleri (Context Menu) */
         QMenu {
@@ -1995,7 +2028,7 @@ if __name__ == "__main__":
             margin: 4px 8px;
         }
     """)
-
+    
     font_yolu = str(PROJE_ANA_DIZINI / "font.ttf")
     if os.path.exists(font_yolu):
         font_id = QFontDatabase.addApplicationFont(font_yolu)
