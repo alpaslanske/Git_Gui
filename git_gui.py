@@ -8,7 +8,7 @@ import webbrowser
 import re
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, QThread, Signal, QPropertyAnimation, QEasingCurve, QEvent
 from PySide6.QtGui import QIcon, QFont, QColor, QFontDatabase
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -607,6 +607,18 @@ class GitGUI(QMainWindow):
         else:
             self.butonlari_guncelle()
 
+    def changeEvent(self, event):
+        # Pencere durum değişikliklerini (Focus) yakalar
+        if event.type() == QEvent.ActivationChange:
+            # Eğer pencere yeniden aktif olduysa (başka programdan buna geçildiyse)
+            if self.isActiveWindow():
+                # Arkada açık bir repo varsa hemen durumu tazele
+                if hasattr(self, 'motor') and self.motor.repo_path:
+                    self.butonlari_guncelle()
+                    
+        # Diğer standart pencere olaylarının bozulmaması için orijinal fonksiyonu çağır
+        super().changeEvent(event)
+
     def setup_ui(self):
         central_widget = QWidget()
         ana_yatay_layout = QHBoxLayout(central_widget)
@@ -886,22 +898,43 @@ class GitGUI(QMainWindow):
         self.setCentralWidget(central_widget)
 
     def toggle_sidebar(self):
-        hedef_genislik = 250 if self.yan_panel.width() == 0 else 0
+        from PySide6.QtCore import QSize
+        
+        # Yan panelin mevcut ve hedef genişliği
+        baslangic_genislik = self.yan_panel.width()
+        hedef_genislik = 250 if baslangic_genislik == 0 else 0
+        
+        # Değişim miktarı (Kapanırken -250, Açılırken +250)
+        fark = hedef_genislik - baslangic_genislik
 
+        # 1. Yan panelin minimum genişlik animasyonu
         self.anim = QPropertyAnimation(self.yan_panel, b"minimumWidth")
         self.anim.setDuration(250)
-        self.anim.setStartValue(self.yan_panel.width())
+        self.anim.setStartValue(baslangic_genislik)
         self.anim.setEndValue(hedef_genislik)
         self.anim.setEasingCurve(QEasingCurve.InOutQuart)
 
+        # 2. Yan panelin maksimum genişlik animasyonu
         self.anim_max = QPropertyAnimation(self.yan_panel, b"maximumWidth")
         self.anim_max.setDuration(250)
-        self.anim_max.setStartValue(self.yan_panel.width())
+        self.anim_max.setStartValue(baslangic_genislik)
         self.anim_max.setEndValue(hedef_genislik)
         self.anim_max.setEasingCurve(QEasingCurve.InOutQuart)
 
+        # 3. ANA PENCERENİN TOPLAM BOYUTUNU AYARLAYAN ANİMASYON
+        mevcut_boyut = self.size()
+        hedef_boyut = QSize(mevcut_boyut.width() + fark, mevcut_boyut.height())
+        
+        self.anim_win = QPropertyAnimation(self, b"size")
+        self.anim_win.setDuration(250)
+        self.anim_win.setStartValue(mevcut_boyut)
+        self.anim_win.setEndValue(hedef_boyut)
+        self.anim_win.setEasingCurve(QEasingCurve.InOutQuart)
+
+        # Tüm animasyonları aynı anda başlat
         self.anim.start()
         self.anim_max.start()
+        self.anim_win.start()
 
     # Bellek ve CPU optimizasyonlu Yan Panel Güncelleme
     def yan_panel_guncelle(self):
@@ -1125,25 +1158,21 @@ class GitGUI(QMainWindow):
             self.konsol.yaz(mesaj)
             QMessageBox.information(self, self.t("basarili"), "Değişiklikler başarıyla çekildi (Pull tamamlandı).")
         else:
-            hata_mesaji = str(mesaj).lower()
             self.konsol.yaz(f"PULL HATASI:\n{mesaj}")
             
-            # --- ÇAKIŞMA (CONFLICT) YAKALAYICI ---
-            if "conflict" in hata_mesaji or "çakışma" in hata_mesaji or "automatic merge failed" in hata_mesaji:
+            # --- DİL BAĞIMSIZ ÇAKIŞMA (CONFLICT) YAKALAYICI ---
+            if self.motor.is_in_conflict():
                 QMessageBox.warning(
                     self, 
                     self.t("hata"), 
                     "Pull işlemi sırasında çakışma (conflict) tespit edildi!\n\nAynı dosyanın aynı satırları hem yerelde hem de GitHub'da değiştirilmiş. Şimdi çakışma çözücü ekranı açılacak."
                 )
                 
-                # Çakışma Çözücü Penceresini Aç
                 dialog = CakismaCozucuDialog(self, self.motor, self.t)
                 dialog.exec()
+                dialog.deleteLater() # Fix Memory Leak
                 
-                # Kullanıcı çakışmaları çözdükten sonra birleştirme kaydı (Merge Commit) yapmak zorundadır
                 self.git_commit()
-            
-            # Çakışma dışındaki diğer hatalar (Bağlantı kopması vb.)
             else:
                 QMessageBox.critical(self, self.t("hata"), f"Pull işlemi sırasında hata oluştu:\n\n{mesaj}")
 
@@ -1629,6 +1658,7 @@ class GitGUI(QMainWindow):
                     # --- ÇAKIŞMA ÇÖZÜCÜ PENCERESİNİ ÇAĞIR ---
                     dialog = CakismaCozucuDialog(self, self.motor, self.t)
                     dialog.exec()
+                    dialog.deleteLater() # Fix Memory Leak
                     # İşlem bitince commit ekranını tetikle
                     self.git_commit()
                 else:
@@ -1683,9 +1713,11 @@ class GitGUI(QMainWindow):
         layout.addLayout(btn_layout)
 
         if dialog.exec() != QDialog.Accepted:
+            dialog.deleteLater() # Fix Memory Leak
             return
 
         tag_adi = input_tag.text().strip()
+        dialog.deleteLater()
         if not tag_adi:
             return
             
@@ -1771,6 +1803,7 @@ class GitGUI(QMainWindow):
                 # --- ÇAKIŞMA ÇÖZÜCÜ PENCERESİNİ ÇAĞIR ---
                 dialog = CakismaCozucuDialog(self, self.motor, self.t)
                 dialog.exec()
+                dialog.deleteLater() # Fix Memory Leak
                 # Rebase devam komutu
                 subprocess.run(["git", "rebase", "--continue"], cwd=self.motor.repo_path, env=self.motor.get_git_env())
             else:
@@ -1867,7 +1900,7 @@ class GitGUI(QMainWindow):
 
     def yonet_remotes(self):
         dialog = QDialog(self)
-        dialog.setAttribute(Qt.WA_DeleteOnClose) # Fix Memory Leak
+        
         dialog.setWindowTitle(self.t("dlg_remotes_title"))
         dialog.resize(450, 300)
         layout = QVBoxLayout(dialog)
@@ -1923,6 +1956,7 @@ class GitGUI(QMainWindow):
         btn_sil.clicked.connect(sil)
 
         dialog.exec()
+        dialog.deleteLater()
 #----------------------------------------------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
     app = QApplication(sys.argv)

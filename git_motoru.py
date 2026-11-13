@@ -132,9 +132,11 @@ class GitMotoru:
             res = subprocess.run(["git", "merge", target_branch], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
             if res.returncode == 0:
                 return True, "ok"
-            hata_metni = (res.stderr or res.stdout).lower()
-            if "conflict" in hata_metni or "çakışma" in hata_metni:
+            
+            # Çift dikiş çakışma kontrolü (Redundancy)
+            if self.is_in_conflict(res.stderr or res.stdout):
                 return False, "conflict"
+                
             return False, res.stderr or res.stdout
         except Exception as e:
             return False, str(e)
@@ -289,13 +291,19 @@ class GitMotoru:
 
             self.komut_logla(f"> git rebase --onto {hedef_hash}^ {hedef_hash}")
             res = subprocess.run(["git", "rebase", "--onto", f"{hedef_hash}^", hedef_hash], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+  
             if res.returncode != 0:
-                hata_metni = (res.stderr or res.stdout).lower()
-                self.komut_logla(f"HATA (Rebase): {res.stderr or res.stdout}")
-                subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
-                if "conflict" in hata_metni or "çakışma" in hata_metni:
+                hata_metni = (res.stderr or res.stdout)
+                self.komut_logla(f"HATA (Rebase): {hata_metni}")
+                
+                if self.is_in_conflict(res.stderr or res.stdout):
+                    subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
                     return False, "conflict"
+                    
+                subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
                 return False, "hata"
+
+                
             return True, "ok"
         except Exception as e:
             self.komut_logla(f"HATA: {e}")
@@ -495,12 +503,18 @@ class GitMotoru:
                 capture_output=True,
                 text=True, encoding='utf-8', errors='replace'
             )
+            
             if res.returncode != 0:
-                hata_metni = (res.stderr or res.stdout).lower()
-                self.komut_logla(f"HATA (Rebase): {res.stderr or res.stdout}")
-                subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
-                if "conflict" in hata_metni or "çakışma" in hata_metni:
+                hata_metni = (res.stderr or res.stdout)
+                self.komut_logla(f"HATA (Rebase): {hata_metni}")
+                
+                if self.is_in_conflict(res.stderr or res.stdout):
+                    subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
                     return False, "conflict"
+                    
+                subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
+                return False, hata_metni                    
+                    
                 return False, res.stderr or res.stdout
             return True, "ok"
         except Exception as e:
@@ -618,4 +632,27 @@ class GitMotoru:
             return True
         except Exception as e:
             self.komut_logla(f"HATA (Resolve): {e}")
+            return False
+
+    def is_in_conflict(self, git_ciktisi=""):
+        # 1. Yöntem (Yedek Sensör): Çıktıdan kelime avı
+        hata_metni = str(git_ciktisi).lower()
+        if "conflict" in hata_metni or "çakışma" in hata_metni:
+            return True
+            
+        # 2. Yöntem (Ana Sensör): Git'in çekirdeğine sorma
+        if not self.repo_exists: return False
+        try:
+            res = subprocess.run(
+                ["git", "ls-files", "-u"], 
+                cwd=self.repo_path, 
+                env=self.get_git_env(),
+                capture_output=True, 
+                text=True, 
+                encoding='utf-8', 
+                errors='replace'
+            )
+            return len(res.stdout.strip()) > 0
+        except Exception as e:
+            self.komut_logla(f"HATA (Conflict Kontrol): {e}")
             return False
