@@ -1653,6 +1653,24 @@ class GitGUI(QMainWindow):
             basarili, hata = self.motor.merge_branch(secim)
             if basarili:
                 QMessageBox.information(self, self.t("basarili"), self.t("msg_merge_basarili").format(secim))
+                
+                # --- BİRLEŞTİRME SONRASI OTOMATİK TEMİZLİK TEKLİFİ ---
+                sil_cevap = QMessageBox.question(
+                    self, 
+                    "Dal Temizliği", 
+                    f"'{secim}' dalı başarıyla birleştirildi.\n\nArtık bu dala ihtiyacınız kalmadığı için kalabalık yapmaması adına silmek ister misiniz?",
+                    QMessageBox.Yes | QMessageBox.No, 
+                    QMessageBox.Yes
+                )
+                
+                if sil_cevap == QMessageBox.Yes:
+                    sil_basarili, sil_hata = self.motor.delete_branch(secim)
+                    if sil_basarili:
+                        self.konsol.yaz(f"> '{secim}' dalı birleştirme sonrası temizlendi.")
+                    else:
+                        QMessageBox.warning(self, self.t("hata"), f"Dal silinemedi: {sil_hata}")
+                # ----------------------------------------------------
+                
             else:
                 if hata == "conflict":
                     # --- ÇAKIŞMA ÇÖZÜCÜ PENCERESİNİ ÇAĞIR ---
@@ -1663,6 +1681,8 @@ class GitGUI(QMainWindow):
                     self.git_commit()
                 else:
                     QMessageBox.critical(self, self.t("hata"), self.t("msg_dal_hata").format(hata))
+            
+            self.dallari_guncelle()
             self.butonlari_guncelle()
 
     def git_sürüm_olustur(self):
