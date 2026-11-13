@@ -224,9 +224,10 @@ class ActionsTemizleIscisi(QThread):
 # ==========================================
 
 class ModernButton(QPushButton):
-    def __init__(self, text, bg_color):
+    def __init__(self, text, bg_color, text_color="white"): # <-- text_color parametresi eklendi
         super().__init__(text)
         self.bg_color = bg_color
+        self.text_color = text_color # <-- Sınıfa kaydedildi
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setCursor(Qt.PointingHandCursor)
         self.update_style()
@@ -237,11 +238,10 @@ class ModernButton(QPushButton):
         l = min(255, int(l * 1.15))
         hover_color = QColor.fromHsl(h, s, l, a).name()
 
-        # Sabit font ve point-size kaldırıldı, dinamik CSS eklendi
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.bg_color};
-                color: white;
+                color: {self.text_color};  /* <-- ARTIK DİNAMİK OLARAK BURADAN ÇEKİYOR */
                 border: none;
                 border-radius: 4px;
                 padding: 10px 8px;
@@ -797,7 +797,8 @@ class GitGUI(QMainWindow):
         self.btn_dal_birlestir.clicked.connect(self.dal_birlestir)
         merge_restore_layout.addWidget(self.btn_dal_birlestir)
         
-        self.btn_restore = ModernButton("", "#f59e0b") # Dikkat çekici Turuncu/Amber rengi
+        #self.btn_restore = ModernButton("", "#f59e0b") # Dikkat çekici Turuncu/Amber rengi
+        self.btn_restore = ModernButton("", "#f59e0b", "#4D4D4D") # <-- "black" parametresi eklendi
         self.btn_restore.clicked.connect(self.git_restore)
         merge_restore_layout.addWidget(self.btn_restore)
         
