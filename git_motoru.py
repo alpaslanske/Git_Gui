@@ -656,3 +656,18 @@ class GitMotoru:
         except Exception as e:
             self.komut_logla(f"HATA (Conflict Kontrol): {e}")
             return False
+
+    def git_restore_all(self):
+        if not self.repo_exists: return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            self.komut_logla("> git reset --hard HEAD")
+            subprocess.run(["git", "reset", "--hard", "HEAD"], cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            
+            self.komut_logla("> git clean -fd")
+            subprocess.run(["git", "clean", "-fd"], cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            
+            return True, "ok"
+        except Exception as e:
+            self.komut_logla(f"HATA (Restore): {e}")
+            return False, str(e)

@@ -598,6 +598,8 @@ class GitGUI(QMainWindow):
         self.btn_dal_sil.setText(self.t("btn_dal_sil"))
         self.btn_dal_birlestir.setText(self.t("btn_dal_birlestir"))
         self.btn_clean_actions.setText(self.t("btn_clean_actions"))
+        
+        self.btn_restore.setText(self.t("btn_restore"))
 
         if self.combo_branches.count() == 1:
             self.combo_branches.setItemText(0, self.t("combo_dal_sec"))
@@ -787,10 +789,19 @@ class GitGUI(QMainWindow):
         branch_crud_layout.addWidget(self.btn_dal_sil)
         sol_layout.addLayout(branch_crud_layout)
 
-        # 5. Satır: Dal Birleştir (Tek)
+        # 5. Satır: Dal Birleştir | Restore (İkili)
+        merge_restore_layout = QHBoxLayout()
+        merge_restore_layout.setSpacing(10)
+        
         self.btn_dal_birlestir = ModernButton("", "#8b5cf6")
         self.btn_dal_birlestir.clicked.connect(self.dal_birlestir)
-        sol_layout.addWidget(self.btn_dal_birlestir)
+        merge_restore_layout.addWidget(self.btn_dal_birlestir)
+        
+        self.btn_restore = ModernButton("", "#f59e0b") # Dikkat çekici Turuncu/Amber rengi
+        self.btn_restore.clicked.connect(self.git_restore)
+        merge_restore_layout.addWidget(self.btn_restore)
+        
+        sol_layout.addLayout(merge_restore_layout)
 
         # 6. Satır: Rebase | Squash (İkili)
         rebase_squash_layout = QHBoxLayout()
@@ -1080,6 +1091,7 @@ class GitGUI(QMainWindow):
         self.btn_dal_sil.setEnabled(is_git)
         self.btn_dal_birlestir.setEnabled(is_git)
         self.btn_clean_actions.setEnabled(is_git)
+        self.btn_restore.setEnabled(is_git)
 
     def git_fetch_kontrol(self):
         # lbl_durum kaldırıldığı için mesajı konsola yazdırıyoruz
@@ -1434,6 +1446,22 @@ class GitGUI(QMainWindow):
             QMessageBox.information(self, self.t("basarili"), self.t("msg_force_push_basarili"))
         else:
             QMessageBox.critical(self, self.t("hata"), f"Force push başarısız oldu:\n{mesaj}")
+
+    def git_restore(self):
+        cevap = QMessageBox.warning(
+            self, 
+            self.t("emin_misiniz"), 
+            self.t("msg_restore_onay"), 
+            QMessageBox.Yes | QMessageBox.No, 
+            QMessageBox.No
+        )
+        if cevap == QMessageBox.Yes:
+            basarili, hata = self.motor.git_restore_all()
+            if basarili:
+                QMessageBox.information(self, self.t("basarili"), self.t("msg_restore_basarili"))
+                self.butonlari_guncelle()
+            else:
+                QMessageBox.critical(self, self.t("hata"), f"İptal işlemi başarısız:\n{hata}")
 
     def git_rollback(self):
         commitler = self.motor.gecmis_getir(adet=30)

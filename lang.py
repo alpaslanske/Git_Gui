@@ -186,7 +186,10 @@ METINLER = {
         "btn_pull": "⏬ Değişiklikleri Çek (Pull)",
         "btn_delete_commit": "🗑️ Commit Sil",
         "msg_pull_onay": "Uzak sunucudaki (GitHub) değişiklikler yerel deponuzla birleştirilecek (Pull).\n\nDevam etmek istiyor musunuz?",
-        "dlg_squash_warn_msg": "Uyarı: Commit birleştirme (Squash) işlemi lineer (Merge olmayan) geçmişlerde sorunsuz çalışır.\nAraya karışmış dal birleştirmeleri varsa hata verebilir.\n\nDevam etmek istiyor musunuz?"
+        "dlg_squash_warn_msg": "Uyarı: Commit birleştirme (Squash) işlemi lineer (Merge olmayan) geçmişlerde sorunsuz çalışır.\nAraya karışmış dal birleştirmeleri varsa hata verebilir.\n\nDevam etmek istiyor musunuz?",
+        "btn_restore": "🧹 Değişiklikleri İptal Et",
+        "msg_restore_onay": "Kaydedilmemiş tüm değişiklikler (yeni eklenen dosyalar dahil) kalıcı olarak silinecek!\n\nBu işlem GERİ ALINAMAZ. Emin misiniz?",
+        "msg_restore_basarili": "Tüm değişiklikler başarıyla iptal edildi ve çalışma ağacı temizlendi."
     },
 
     "en": {
@@ -376,6 +379,9 @@ METINLER = {
         "btn_pull": "⏬ Pull Changes",
         "btn_delete_commit": "🗑️ Delete Commit",
         "msg_pull_onay": "Remote changes will be merged into your local repository (Pull).\n\nDo you want to continue?",
-        "dlg_squash_warn_msg": "Warning: Squashing commits works best on linear history (no Merges).\nIt might fail if there are merge commits in between.\n\nDo you want to proceed?"
+        "dlg_squash_warn_msg": "Warning: Squashing commits works best on linear history (no Merges).\nIt might fail if there are merge commits in between.\n\nDo you want to proceed?",
+        "btn_restore": "🧹 Restore Changes",
+        "msg_restore_onay": "All uncommitted changes (including untracked files) will be permanently deleted!\n\nThis action CANNOT be undone. Are you sure?",
+        "msg_restore_basarili": "All changes successfully discarded and working tree is clean."
     }
 }
