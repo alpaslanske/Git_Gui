@@ -741,13 +741,32 @@ class GitMotoru:
             self.komut_logla(f"HATA (Stash): {e}")
             return False, str(e)
 
-    def git_stash_pop(self):
+    def git_stash_list(self):
+        if not self.repo_exists:
+            return []
+        try:
+            env = self.get_git_env()
+            res = subprocess.run(
+                ["git", "stash", "list"],
+                cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace'
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+            return []
+        except Exception:
+            return []
+
+    def git_stash_pop(self, stash_ref=""):
         if not self.repo_exists:
             return False, "repo_yok"
         try:
             env = self.get_git_env()
-            self.komut_logla("> git stash pop")
-            res = subprocess.run(["git", "stash", "pop"], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            cmd = ["git", "stash", "pop"]
+            if stash_ref:
+                cmd.append(stash_ref)
+
+            self.komut_logla(f"> {' '.join(cmd)}")
+            res = subprocess.run(cmd, cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
             if res.returncode == 0:
                 return True, "ok"
 
@@ -760,3 +779,4 @@ class GitMotoru:
         except Exception as e:
             self.komut_logla(f"HATA (Stash Pop): {e}")
             return False, str(e)
+

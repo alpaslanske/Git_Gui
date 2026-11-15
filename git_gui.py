@@ -2048,7 +2048,22 @@ class GitGUI(QMainWindow):
                 QMessageBox.critical(self, self.t("hata"), f"Stash hatası:\n{sonuc}")
 
     def git_stash_pop_yap(self):
-        basarili, sonuc = self.motor.git_stash_pop()
+        liste = self.motor.git_stash_list()
+        if not liste:
+            QMessageBox.information(self, "Git", self.t("msg_stash_pop_empty"))
+            return
+
+        secilen_ref = ""
+        if len(liste) > 1:
+            secim, ok = QInputDialog.getItem(
+                self, self.t("dlg_stash_select_title"), self.t("dlg_stash_select_msg"),
+                liste, 0, False
+            )
+            if not ok or not secim:
+                return
+            secilen_ref = secim.split(":", 1)[0].strip()
+
+        basarili, sonuc = self.motor.git_stash_pop(secilen_ref)
         if basarili:
             QMessageBox.information(self, self.t("basarili"), self.t("msg_stash_pop_ok"))
             self.butonlari_guncelle()
@@ -2063,7 +2078,6 @@ class GitGUI(QMainWindow):
                 self.butonlari_guncelle()
             else:
                 QMessageBox.critical(self, self.t("hata"), f"Stash Pop hatası:\n{sonuc}")
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
