@@ -397,15 +397,61 @@ class GitMotoru:
             self.komut_logla(f"HATA (GitHub Sil): {e}")
             return False, str(e)
 
-    def git_clone(self, url, hedef_dizin):
+    def get_remote_branches(self, url):
         try:
-            self.komut_logla(f"> git clone {url} '{hedef_dizin}'")
+            self.komut_logla(f"> git ls-remote --heads {url}")
             env = os.environ.copy()
             env["GIT_TERMINAL_PROMPT"] = "0"
             res = subprocess.run(
-                ["git", "clone", url, hedef_dizin],
+                ["git", "ls-remote", "--heads", url],
+                capture_output=True, text=True, env=env, timeout=15, encoding='utf-8', errors='replace'
+            )
+            if res.returncode != 0:
+                return False, res.stderr.strip() or "Uzak depo okunamadı."
+
+            branches = []
+            for line in res.stdout.splitlines():
+                if "refs/heads/" in line:
+                    branch_name = line.split("refs/heads/")[-1].strip()
+                    if branch_name:
+                        branches.append(branch_name)
+            return True, branches
+        except subprocess.TimeoutExpired:
+            return False, "Bağlantı zaman aşımına uğradı (Timeout)."
+        except Exception as e:
+            return False, str(e)
+
+    def git_clone(self, url, hedef_dizin, branch=""):
+        try:
+            cmd = ["git", "clone"]
+            if branch and branch != "__ALL__":
+                cmd.extend(["-b", branch])
+            cmd.extend([url, hedef_dizin])
+
+            self.komut_logla(f"> {' '.join(cmd)}")
+            env = os.environ.copy()
+            env["GIT_TERMINAL_PROMPT"] = "0"
+            res = subprocess.run(
+                cmd,
                 capture_output=True, text=True, env=env, check=True, encoding='utf-8', errors='replace'
             )
+
+            # Eğer "Tüm Dallar" seçildiyse uzak dalların hepsini yerelde oluştur
+            if branch == "__ALL__":
+                self.komut_logla("> Tüm uzak dallar yerel olarak oluşturuluyor...")
+                res_b = subprocess.run(
+                    ["git", "branch", "-r"], cwd=hedef_dizin, capture_output=True, text=True, encoding='utf-8', errors='replace'
+                )
+                for line in res_b.stdout.splitlines():
+                    line = line.strip()
+                    if "->" in line or not line.startswith("origin/"):
+                        continue
+                    local_name = line.replace("origin/", "", 1)
+                    subprocess.run(
+                        ["git", "branch", "--track", local_name, line],
+                        cwd=hedef_dizin, capture_output=True, text=True
+                    )
+
             self.repo_path = hedef_dizin
             self.repo_exists = True
             return True, res.stdout
@@ -422,6 +468,8 @@ class GitMotoru:
                 try: shutil.rmtree(hedef_dizin)
                 except Exception: pass
             return False, str(e)
+
+
 
     def git_tag_olustur(self, tag_adi, aciklama="", dosya_yolu=""):
         if not self.repo_exists:

@@ -189,7 +189,15 @@ METINLER = {
         "dlg_squash_warn_msg": "Uyarı: Commit birleştirme (Squash) işlemi lineer (Merge olmayan) geçmişlerde sorunsuz çalışır.\nAraya karışmış dal birleştirmeleri varsa hata verebilir.\n\nDevam etmek istiyor musunuz?",
         "btn_restore": "🧹 Değişiklikleri İptal Et",
         "msg_restore_onay": "Kaydedilmemiş tüm değişiklikler (yeni eklenen dosyalar dahil) kalıcı olarak silinecek!\n\nBu işlem GERİ ALINAMAZ. Emin misiniz?",
-        "msg_restore_basarili": "Tüm değişiklikler başarıyla iptal edildi ve çalışma ağacı temizlendi."
+        "msg_restore_basarili": "Tüm değişiklikler başarıyla iptal edildi ve çalışma ağacı temizlendi.",
+		"bg_islem_var": "⚠️ Arka Plan İşlemi Var",
+		"bg_islem_yok": "Bekliyor",
+		"dlg_clone_branch_title": "Dal (Branch) Seçimi",
+		"dlg_clone_branch_msg": "Hangi dal indirilsin? (Boş bırakılırsa varsayılan iner):",
+		"msg_fetching_branches": "Uzak depodaki dallar (branch) taranıyor...",
+		"opt_default_branch": "Varsayılan Dal (Default)",
+		"dlg_clone_branch_select": "İndirmek istediğiniz dalı seçin:",
+		"opt_all_branches": "🌐 Tüm Dallar (Hepsini Yerelde Oluştur)",
     },
 
     "en": {
@@ -382,6 +390,16 @@ METINLER = {
         "dlg_squash_warn_msg": "Warning: Squashing commits works best on linear history (no Merges).\nIt might fail if there are merge commits in between.\n\nDo you want to proceed?",
         "btn_restore": "🧹 Restore Changes",
         "msg_restore_onay": "All uncommitted changes (including untracked files) will be permanently deleted!\n\nThis action CANNOT be undone. Are you sure?",
-        "msg_restore_basarili": "All changes successfully discarded and working tree is clean."
+        "msg_restore_basarili": "All changes successfully discarded and working tree is clean.",
+        "bg_islem_var": "⚠️ Background Task Running",
+		"bg_islem_yok": "Idle",
+		"dlg_clone_branch_title": "Select Branch",
+		"dlg_clone_branch_msg": "Which branch should be cloned? (Leave blank for default):",
+		"msg_fetching_branches": "Fetching branches from remote repository...",
+		"opt_default_branch": "Default Branch",
+		"dlg_clone_branch_select": "Select the branch you want to clone:",
+		"opt_all_branches": "🌐 All Branches (Create All Locally)"
+
+
     }
 }
