@@ -208,7 +208,10 @@ METINLER = {
 		"msg_stash_pop_empty": "Rafta geri getirilecek kayıtlı bir değişiklik yok.",
 		"msg_stash_conflict": "Raftaki değişiklikler geri getirilirken çakışma (conflict) oluştu!\nLütfen çakışmaları çözün.",
 		"dlg_stash_select_title": "Raftan Kayıt Seç (Stash Pop)",
-		"dlg_stash_select_msg": "Rafta birden fazla kayıt var. Geri getirmek istediğinizi seçin"
+		"dlg_stash_select_msg": "Rafta birden fazla kayıt var. Geri getirmek istediğinizi seçin",
+		"btn_stash_drop": "🗑️ Seçili Kaydı Sil (Drop)",
+		"msg_stash_drop_confirm": "'{}' kaydı kalıcı olarak silinecek. Onaylıyor musunuz?",
+		"msg_stash_drop_ok": "Seçili stash kaydı silindi."
     },
 
     "en": {
@@ -420,6 +423,9 @@ METINLER = {
 		"msg_stash_pop_empty": "No stash entries found.",
 		"msg_stash_conflict": "Conflict occurred while popping stash!\nPlease resolve conflicts.",
 		"dlg_stash_select_title": "Select Stash Entry (Pop)",
-		"dlg_stash_select_msg": "Multiple stash entries found. Select one to restore:"
+		"dlg_stash_select_msg": "Multiple stash entries found. Select one to restore:",
+		"btn_stash_drop": "🗑️ Delete Selected (Drop)",
+		"msg_stash_drop_confirm": "Entry '{}' will be permanently deleted. Are you sure?",
+		"msg_stash_drop_ok": "Selected stash entry deleted."
     }
 }

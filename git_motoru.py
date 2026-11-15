@@ -780,3 +780,20 @@ class GitMotoru:
             self.komut_logla(f"HATA (Stash Pop): {e}")
             return False, str(e)
 
+    def git_stash_drop(self, stash_ref=""):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            cmd = ["git", "stash", "drop"]
+            if stash_ref:
+                cmd.append(stash_ref)
+
+            self.komut_logla(f"> {' '.join(cmd)}")
+            res = subprocess.run(cmd, cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if res.returncode == 0:
+                return True, "ok"
+            return False, res.stderr or res.stdout
+        except Exception as e:
+            self.komut_logla(f"HATA (Stash Drop): {e}")
+            return False, str(e)

@@ -2053,31 +2053,88 @@ class GitGUI(QMainWindow):
             QMessageBox.information(self, "Git", self.t("msg_stash_pop_empty"))
             return
 
-        secilen_ref = ""
-        if len(liste) > 1:
-            secim, ok = QInputDialog.getItem(
-                self, self.t("dlg_stash_select_title"), self.t("dlg_stash_select_msg"),
-                liste, 0, False
-            )
-            if not ok or not secim:
-                return
-            secilen_ref = secim.split(":", 1)[0].strip()
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self.t("dlg_stash_select_title"))
+        dialog.resize(550, 300)
+        layout = QVBoxLayout(dialog)
 
-        basarili, sonuc = self.motor.git_stash_pop(secilen_ref)
-        if basarili:
-            QMessageBox.information(self, self.t("basarili"), self.t("msg_stash_pop_ok"))
-            self.butonlari_guncelle()
-        else:
-            if sonuc == "empty":
-                QMessageBox.information(self, "Git", self.t("msg_stash_pop_empty"))
-            elif sonuc == "conflict":
-                QMessageBox.warning(self, self.t("hata"), self.t("msg_stash_conflict"))
-                dialog = CakismaCozucuDialog(self, self.motor, self.t)
-                dialog.exec()
-                dialog.deleteLater()
+        lbl = QLabel(self.t("dlg_stash_select_msg"))
+        layout.addWidget(lbl)
+
+        list_widget = QListWidget()
+        list_widget.setStyleSheet("""
+            QListWidget { background-color: #2a2a32; color: #e4e4e7; border: 1px solid #3f3f46; border-radius: 4px; padding: 5px; }
+            QListWidget::item:selected { background-color: #007acc; color: white; }
+        """)
+        list_widget.addItems(liste)
+        list_widget.setCurrentRow(0)
+        layout.addWidget(list_widget)
+
+        btn_layout = QHBoxLayout()
+        btn_pop = ModernButton(self.t("btn_stash_pop"), "#0d9488")
+        btn_drop = ModernButton(self.t("btn_stash_drop"), "#dc3545")
+        btn_cancel = ModernButton(self.t("btn_iptal"), "#3f3f46")
+
+        btn_layout.addWidget(btn_pop)
+        btn_layout.addWidget(btn_drop)
+        btn_layout.addWidget(btn_cancel)
+        layout.addLayout(btn_layout)
+
+        def pop_tiklandi():
+            secili = list_widget.currentItem()
+            if not secili:
+                return
+            secilen_ref = secili.text().split(":", 1)[0].strip()
+            dialog.accept()
+
+            basarili, sonuc = self.motor.git_stash_pop(secilen_ref)
+            if basarili:
+                QMessageBox.information(self, self.t("basarili"), self.t("msg_stash_pop_ok"))
                 self.butonlari_guncelle()
             else:
-                QMessageBox.critical(self, self.t("hata"), f"Stash Pop hatası:\n{sonuc}")
+                if sonuc == "empty":
+                    QMessageBox.information(self, "Git", self.t("msg_stash_pop_empty"))
+                elif sonuc == "conflict":
+                    QMessageBox.warning(self, self.t("hata"), self.t("msg_stash_conflict"))
+                    c_dialog = CakismaCozucuDialog(self, self.motor, self.t)
+                    c_dialog.exec()
+                    c_dialog.deleteLater()
+                    self.butonlari_guncelle()
+                else:
+                    QMessageBox.critical(self, self.t("hata"), f"Stash Pop hatası:\n{sonuc}")
+
+        def drop_tiklandi():
+            secili = list_widget.currentItem()
+            if not secili:
+                return
+            tam_metin = secili.text()
+            secilen_ref = tam_metin.split(":", 1)[0].strip()
+            cevap = QMessageBox.warning(
+                dialog, self.t("emin_misiniz"),
+                self.t("msg_stash_drop_confirm").format(tam_metin),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+            if cevap == QMessageBox.Yes:
+                basarili, hata = self.motor.git_stash_drop(secilen_ref)
+                if basarili:
+                    QMessageBox.information(dialog, self.t("basarili"), self.t("msg_stash_drop_ok"))
+                    yeni_liste = self.motor.git_stash_list()
+                    list_widget.clear()
+                    if not yeni_liste:
+                        dialog.accept()
+                    else:
+                        list_widget.addItems(yeni_liste)
+                        list_widget.setCurrentRow(0)
+                else:
+                    QMessageBox.critical(dialog, self.t("hata"), f"Stash Drop hatası:\n{hata}")
+
+        btn_pop.clicked.connect(pop_tiklandi)
+        btn_drop.clicked.connect(drop_tiklandi)
+        btn_cancel.clicked.connect(dialog.reject)
+
+        dialog.exec()
+        dialog.deleteLater()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
