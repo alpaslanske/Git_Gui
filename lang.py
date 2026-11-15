@@ -198,6 +198,15 @@ METINLER = {
 		"opt_default_branch": "Varsayılan Dal (Default)",
 		"dlg_clone_branch_select": "İndirmek istediğiniz dalı seçin:",
 		"opt_all_branches": "🌐 Tüm Dallar (Hepsini Yerelde Oluştur)",
+		"btn_stash": "📦 Rafa Kaldır (Stash)",
+		"btn_stash_pop": "📤 Raftan Getir (Pop)",
+		"dlg_stash_title": "Değişiklikleri Rafa Kaldır (Stash)",
+		"dlg_stash_msg": "Bu geçici kayıt için bir not girin (İsteğe bağlı):",
+		"msg_stash_ok": "Değişiklikler başarıyla rafa kaldırıldı ve çalışma alanı temizlendi!",
+		"msg_stash_empty": "Rafa kaldırılacak herhangi bir değişiklik bulunmuyor.",
+		"msg_stash_pop_ok": "Raftaki son değişiklikler geri getirildi!",
+		"msg_stash_pop_empty": "Rafta geri getirilecek kayıtlı bir değişiklik yok.",
+		"msg_stash_conflict": "Raftaki değişiklikler geri getirilirken çakışma (conflict) oluştu!\nLütfen çakışmaları çözün."
     },
 
     "en": {
@@ -398,8 +407,15 @@ METINLER = {
 		"msg_fetching_branches": "Fetching branches from remote repository...",
 		"opt_default_branch": "Default Branch",
 		"dlg_clone_branch_select": "Select the branch you want to clone:",
-		"opt_all_branches": "🌐 All Branches (Create All Locally)"
-
-
+		"opt_all_branches": "🌐 All Branches (Create All Locally)",
+		"btn_stash": "📦 Stash Changes",
+		"btn_stash_pop": "📤 Pop Stash",
+		"dlg_stash_title": "Stash Changes",
+		"dlg_stash_msg": "Enter a note for this stash (Optional):",
+		"msg_stash_ok": "Changes stashed successfully and working tree is clean!",
+		"msg_stash_empty": "No local changes to save.",
+		"msg_stash_pop_ok": "Latest stashed changes restored!",
+		"msg_stash_pop_empty": "No stash entries found.",
+		"msg_stash_conflict": "Conflict occurred while popping stash!\nPlease resolve conflicts."
     }
 }

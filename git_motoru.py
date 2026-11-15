@@ -719,3 +719,44 @@ class GitMotoru:
         except Exception as e:
             self.komut_logla(f"HATA (Restore): {e}")
             return False, str(e)
+    def git_stash_save(self, mesaj=""):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        try:
+            is_clean, _ = self.get_status()
+            if is_clean:
+                return False, "empty"
+
+            env = self.get_git_env()
+            cmd = ["git", "stash", "push", "-u"]
+            if mesaj.strip():
+                cmd.extend(["-m", mesaj.strip()])
+
+            self.komut_logla(f"> {' '.join(cmd)}")
+            res = subprocess.run(cmd, cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if res.returncode == 0:
+                return True, "ok"
+            return False, res.stderr or res.stdout
+        except Exception as e:
+            self.komut_logla(f"HATA (Stash): {e}")
+            return False, str(e)
+
+    def git_stash_pop(self):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            self.komut_logla("> git stash pop")
+            res = subprocess.run(["git", "stash", "pop"], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if res.returncode == 0:
+                return True, "ok"
+
+            cikti = (res.stderr or res.stdout).lower()
+            if "no stash entries found" in cikti:
+                return False, "empty"
+            if self.is_in_conflict(res.stderr or res.stdout):
+                return False, "conflict"
+            return False, res.stderr or res.stdout
+        except Exception as e:
+            self.komut_logla(f"HATA (Stash Pop): {e}")
+            return False, str(e)
