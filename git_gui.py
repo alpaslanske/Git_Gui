@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from git_motoru import GitMotoru
-from lang import METINLER
+from lang import translate
 
 def get_system_documents_dir():
     if "APPIMAGE" in os.environ:
@@ -55,15 +55,16 @@ class SurumIscisi(QThread):
     sonuc_sinyali = Signal(bool, str)
     log_sinyali = Signal(str)
 
-    def __init__(self, repo_path, tag_adi, aciklama, dosya_yolu):
+    def __init__(self, repo_path, tag_adi, aciklama, dosya_yolu, language="tr"):
         super().__init__()
         self.repo_path = repo_path
         self.tag_adi = tag_adi
         self.aciklama = aciklama
         self.dosya_yolu = dosya_yolu
+        self.language = language
 
     def run(self):
-        motor = GitMotoru()
+        motor = GitMotoru(self.language)
         motor.set_path(self.repo_path)
         motor.log_callback = self.log_sinyali.emit
         basarili, hata = motor.git_tag_olustur(self.tag_adi, self.aciklama, self.dosya_yolu)
@@ -72,13 +73,14 @@ class SurumIscisi(QThread):
 class KlonlamaIscisi(QThread):
     sonuc_sinyali = Signal(bool, str, str)
     log_sinyali = Signal(str)
-    def __init__(self, url, hedef_yol, branch=""):
+    def __init__(self, url, hedef_yol, branch="", language="tr"):
         super().__init__()
         self.url = url
         self.hedef_yol = hedef_yol
         self.branch = branch
+        self.language = language
     def run(self):
-        motor = GitMotoru()
+        motor = GitMotoru(self.language)
         motor.log_callback = self.log_sinyali.emit
         try:
             basarili, cikti = motor.git_clone(self.url, self.hedef_yol, self.branch)
@@ -90,12 +92,13 @@ class UzakDalIscisi(QThread):
     sonuc_sinyali = Signal(bool, object, str)
     log_sinyali = Signal(str)
 
-    def __init__(self, url):
+    def __init__(self, url, language="tr"):
         super().__init__()
         self.url = url
+        self.language = language
 
     def run(self):
-        motor = GitMotoru()
+        motor = GitMotoru(self.language)
         motor.log_callback = self.log_sinyali.emit
         basarili, sonuc = motor.get_remote_branches(self.url)
         self.sonuc_sinyali.emit(basarili, sonuc, self.url)
@@ -105,13 +108,14 @@ class PushIscisi(QThread):
     sonuc_sinyali = Signal(bool, str)
     log_sinyali = Signal(str)
 
-    def __init__(self, repo_path, force=False):
+    def __init__(self, repo_path, force=False, language="tr"):
         super().__init__()
         self.repo_path = repo_path
         self.force = force
+        self.language = language
 
     def run(self):
-        motor = GitMotoru()
+        motor = GitMotoru(self.language)
         motor.set_path(self.repo_path)
         motor.log_callback = self.log_sinyali.emit
         try:
@@ -124,12 +128,13 @@ class FetchIscisi(QThread):
     sonuc_sinyali = Signal(bool, object)
     log_sinyali = Signal(str)
 
-    def __init__(self, repo_path):
+    def __init__(self, repo_path, language="tr"):
         super().__init__()
         self.repo_path = repo_path
+        self.language = language
 
     def run(self):
-        motor = GitMotoru()
+        motor = GitMotoru(self.language)
         motor.set_path(self.repo_path)
         motor.log_callback = self.log_sinyali.emit
         basarili, sonuc = motor.git_fetch_kontrol()
@@ -139,15 +144,16 @@ class PullIscisi(QThread):
     sonuc_sinyali = Signal(bool, str)
     log_sinyali = Signal(str)
 
-    def __init__(self, repo_path):
+    def __init__(self, repo_path, language="tr"):
         super().__init__()
         self.repo_path = repo_path
+        self.language = language
 
     def run(self):
         try:
-            motor = GitMotoru()
+            motor = GitMotoru(self.language)
             if not motor.set_path(self.repo_path):
-                self.sonuc_sinyali.emit(False, "repo_yok")
+                self.sonuc_sinyali.emit(False, translate(self.language, "msg_status_no_repo"))
                 return
             res = subprocess.run(
                 ["git", "pull"], cwd=self.repo_path, env=motor.get_git_env(),
@@ -165,15 +171,16 @@ class GitOperationIscisi(QThread):
     sonuc_sinyali = Signal(bool, object)
     log_sinyali = Signal(str)
 
-    def __init__(self, repo_path, operation):
+    def __init__(self, repo_path, operation, language="tr"):
         super().__init__()
         self.repo_path = repo_path
         self.operation = operation
+        self.language = language
 
     def run(self):
-        motor = GitMotoru()
+        motor = GitMotoru(self.language)
         if not motor.set_path(self.repo_path):
-            self.sonuc_sinyali.emit(False, "repo_yok")
+            self.sonuc_sinyali.emit(False, translate(self.language, "msg_status_no_repo"))
             return
         motor.log_callback = self.log_sinyali.emit
         try:
@@ -222,19 +229,23 @@ class ActionsTemizleIscisi(QThread):
     sonuc_sinyali = Signal(bool, str)
     log_sinyali = Signal(str)
 
-    def __init__(self, repo_path):
+    def __init__(self, repo_path, language="tr"):
         super().__init__()
         self.repo_path = repo_path
+        self.language = language
+
+    def t(self, key):
+        return translate(self.language, key)
 
     def run(self):
         try:
-            self.log_sinyali.emit("> Tamamlanmış GitHub Actions çalıştırmaları taranıyor...")
+            self.log_sinyali.emit(self.t("log_actions_scan"))
             res = subprocess.run(
                 ["gh", "run", "list", "--status", "completed", "--limit", "500", "--json", "databaseId", "-q", ".[].databaseId"],
                 cwd=self.repo_path, capture_output=True, text=True, encoding="utf-8", errors="replace"
             )
             if res.returncode != 0:
-                self.sonuc_sinyali.emit(False, res.stderr.strip() or "GitHub CLI (gh) hatası.")
+                self.sonuc_sinyali.emit(False, res.stderr.strip() or self.t("msg_actions_cli_error"))
                 return
 
             run_ids = [r.strip() for r in res.stdout.strip().splitlines() if r.strip()]
@@ -250,11 +261,11 @@ class ActionsTemizleIscisi(QThread):
                 )
                 if del_res.returncode == 0:
                     silinen_sayisi += 1
-                    self.log_sinyali.emit(f"  ✓ Silindi: Run #{run_id}")
+                    self.log_sinyali.emit(self.t("log_actions_deleted").format(run_id))
 
             self.sonuc_sinyali.emit(True, str(silinen_sayisi))
         except FileNotFoundError:
-            self.sonuc_sinyali.emit(False, "Sistemde 'gh' (GitHub CLI) kurulu değil.")
+            self.sonuc_sinyali.emit(False, self.t("msg_gh_not_installed"))
         except Exception as e:
             self.sonuc_sinyali.emit(False, str(e))
 
@@ -330,15 +341,15 @@ class CakismaCozucuDialog(QDialog):
         sag_layout = QVBoxLayout()
         buton_layout = QHBoxLayout()
 
-        self.btn_mevcut_koru = ModernButton("👇 Mevcudu Koru", "Primary")
+        self.btn_mevcut_koru = ModernButton(self.t("btn_conflict_keep_current"), "Primary")
         self.btn_mevcut_koru.setStyleSheet("background-color: #059669; color: white;")
         self.btn_mevcut_koru.clicked.connect(lambda: self.kod_koru("mevcut"))
 
-        self.btn_gelen_koru = ModernButton("👇 Geleni Koru", "Primary")
+        self.btn_gelen_koru = ModernButton(self.t("btn_conflict_keep_incoming"), "Primary")
         self.btn_gelen_koru.setStyleSheet("background-color: #2563eb; color: white;")
         self.btn_gelen_koru.clicked.connect(lambda: self.kod_koru("gelen"))
 
-        self.btn_ikisini_koru = ModernButton("🤝 İkisini de Koru", "Primary")
+        self.btn_ikisini_koru = ModernButton(self.t("btn_conflict_keep_both"), "Primary")
         self.btn_ikisini_koru.setStyleSheet("background-color: #7c3aed; color: white;")
         self.btn_ikisini_koru.clicked.connect(lambda: self.kod_koru("ikisi"))
 
@@ -479,7 +490,7 @@ class GitGUI(QMainWindow):
                 sistem_ikonu = QIcon(str(icon_path))
         self.setWindowIcon(sistem_ikonu)
 
-        self.motor = GitMotoru()
+        self.motor = GitMotoru(self.aktif_lang)
         self.setup_ui()
         self.motor.log_callback = self.konsol.yaz
 
@@ -488,7 +499,7 @@ class GitGUI(QMainWindow):
         self.konsol.yaz(self.t("konsol_hazir"))
 
     def t(self, anahtar):
-        return METINLER[self.aktif_lang].get(anahtar, anahtar)
+        return translate(self.aktif_lang, anahtar)
 
     def ayarlari_yukle(self):
         if not self.settings_file.exists():
@@ -499,6 +510,7 @@ class GitGUI(QMainWindow):
                 ayarlar = json.load(f)
             kayitli_dil = ayarlar.get("language", "tr")
             self.aktif_lang = kayitli_dil
+            self.motor.language = kayitli_dil
             self.combo_lang.blockSignals(True)
             self.combo_lang.setCurrentIndex(1 if kayitli_dil == "en" else 0)
             self.combo_lang.blockSignals(False)
@@ -526,7 +538,7 @@ class GitGUI(QMainWindow):
 
             self.butonlari_guncelle()
         except Exception as e:
-            print(f"Ayar yükleme hatası: {e}")
+            print(self.t("log_settings_load_error").format(e))
             self.repo_history = []
             self.butonlari_guncelle()
 
@@ -549,7 +561,7 @@ class GitGUI(QMainWindow):
             with open(self.settings_file, "w", encoding="utf-8") as f:
                 json.dump(ayarlar, f, ensure_ascii=False, indent=4)
         except Exception as e:
-            print(f"Ayar kaydetme hatası: {e}")
+            print(self.t("log_settings_save_error").format(e))
 
     def otomatik_kullanici_adi_baslat(self):
         self.user_isci = UsernameIscisi()
@@ -590,11 +602,15 @@ class GitGUI(QMainWindow):
 
     def lang_degistir(self, index):
         self.aktif_lang = "tr" if index == 0 else "en"
+        self.motor.language = self.aktif_lang
         self.metinleri_guncelle()
         self.ayarlari_kaydet()
 
     def metinleri_guncelle(self):
         self.setWindowTitle(self.t("pencere_baslik"))
+        self.konsol.lbl_baslik.setText(self.t("lbl_konsol"))
+        self.combo_repos.setItemText(0, self.t("combo_repo_history"))
+        self.combo_branches.setItemText(0, self.t("combo_dal_sec"))
         self.btn_sec.setText(self.t("btn_sec"))
         self.btn_login.setText(self.t("btn_login"))
         self.btn_init.setText(self.t("btn_init"))
@@ -745,7 +761,7 @@ class GitGUI(QMainWindow):
             QComboBox::drop-down { border: none; }
             QComboBox QAbstractItemView { background-color: #2a2a32; color: white; selection-background-color: #007acc; }
         """)
-        self.combo_repos.addItem("📂 Mevcut Repolar...")
+        self.combo_repos.addItem(self.t("combo_repo_history"))
         self.combo_repos.currentIndexChanged.connect(self.repo_combobox_degisti)
         secim_layout.addWidget(self.combo_repos, 2)
 
@@ -757,7 +773,7 @@ class GitGUI(QMainWindow):
             QComboBox::drop-down { border: none; }
             QComboBox QAbstractItemView { background-color: #2a2a32; color: white; selection-background-color: #10b981; }
         """)
-        self.combo_branches.addItem("🌿 Dal Seçimi...")
+        self.combo_branches.addItem(self.t("combo_dal_sec"))
         self.combo_branches.currentIndexChanged.connect(self.dal_degistir)
         secim_layout.addWidget(self.combo_branches, 1)
         top_layout.addLayout(secim_layout)
@@ -1114,7 +1130,7 @@ class GitGUI(QMainWindow):
         self.btn_toggle_sidebar.setEnabled(False)
         self.yan_panel.setEnabled(False)
         self.combo_repos.setEnabled(False)
-        self.operation_isci = GitOperationIscisi(self.motor.repo_path, operation)
+        self.operation_isci = GitOperationIscisi(self.motor.repo_path, operation, self.aktif_lang)
         if not hasattr(self, "_git_operation_workers"):
             self._git_operation_workers = []
         self._git_operation_workers.append(self.operation_isci)
@@ -1132,11 +1148,11 @@ class GitGUI(QMainWindow):
             self._git_operation_workers.remove(worker)
 
     def git_fetch_kontrol(self):
-        self.konsol.yaz("> Fetch işlemi bekleniyor...")
+        self.konsol.yaz(self.t("log_fetch_wait"))
         self._set_ui_lock(False)
         QApplication.processEvents()
 
-        self.fetch_isci = FetchIscisi(self.motor.repo_path)
+        self.fetch_isci = FetchIscisi(self.motor.repo_path, self.aktif_lang)
         self.fetch_isci.log_sinyali.connect(self.konsol.yaz)
         self.fetch_isci.sonuc_sinyali.connect(self.fetch_tamamlandi)
         self.fetch_isci.finished.connect(self.arka_plan_durumu_guncelle)
@@ -1159,7 +1175,7 @@ class GitGUI(QMainWindow):
             elif ileri == 0 and geri > 0:
                 cevap = QMessageBox.question(
                     self, self.t("basarili"),
-                    f"{self.t('fetch_geride').format(geri)}\n\nUzak sunucudaki değişiklikleri şimdi çekmek (Pull) ister misiniz?",
+                    f"{self.t('fetch_geride').format(geri)}\n\n{self.t('msg_fetch_pull_prompt')}",
                     QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
                 )
                 if cevap == QMessageBox.Yes:
@@ -1172,7 +1188,7 @@ class GitGUI(QMainWindow):
             else:
                 cevap = QMessageBox.question(
                     self, self.t("basarili"),
-                    f"{self.t('fetch_farkli').format(ileri, geri)}\n\nDeğişiklikleri birleştirmek (Pull / Merge) ister misiniz?",
+                    f"{self.t('fetch_farkli').format(ileri, geri)}\n\n{self.t('msg_fetch_merge_prompt')}",
                     QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
                 )
                 if cevap == QMessageBox.Yes:
@@ -1191,11 +1207,11 @@ class GitGUI(QMainWindow):
         if cevap != QMessageBox.Yes:
             return
 
-        self.konsol.yaz("> git pull işlemi başlatılıyor...")
+        self.konsol.yaz(self.t("log_pull_start"))
         self._set_ui_lock(False)
         QApplication.processEvents()
 
-        self.pull_isci = PullIscisi(self.motor.repo_path)
+        self.pull_isci = PullIscisi(self.motor.repo_path, self.aktif_lang)
         self.pull_isci.log_sinyali.connect(self.konsol.yaz)
         self.pull_isci.sonuc_sinyali.connect(self.pull_tamamlandi)
         self.pull_isci.finished.connect(self.arka_plan_durumu_guncelle)
@@ -1206,21 +1222,21 @@ class GitGUI(QMainWindow):
         self.butonlari_guncelle()
         if basarili:
             self.konsol.yaz(mesaj)
-            QMessageBox.information(self, self.t("basarili"), "Değişiklikler başarıyla çekildi (Pull tamamlandı).")
+            QMessageBox.information(self, self.t("basarili"), self.t("msg_pull_success"))
         else:
-            self.konsol.yaz(f"PULL HATASI:\n{mesaj}")
+            self.konsol.yaz(self.t("log_pull_error").format(mesaj))
             if self.motor.is_in_conflict():
                 QMessageBox.warning(
                     self,
                     self.t("hata"),
-                    "Pull işlemi sırasında çakışma (conflict) tespit edildi!\n\nAynı dosyanın aynı satırları hem yerelde hem de GitHub'da değiştirilmiş. Şimdi çakışma çözücü ekranı açılacak."
+                    self.t("msg_pull_conflict")
                 )
                 dialog = CakismaCozucuDialog(self, self.motor, self.t)
                 dialog.exec()
                 dialog.deleteLater()
                 self.git_commit()
             else:
-                QMessageBox.critical(self, self.t("hata"), f"Pull işlemi sırasında hata oluştu:\n\n{mesaj}")
+                QMessageBox.critical(self, self.t("hata"), self.t("msg_pull_error").format(mesaj))
 
     def gecmise_repo_ekle(self, path):
         if not hasattr(self, 'repo_history'):
@@ -1336,9 +1352,12 @@ class GitGUI(QMainWindow):
         repo_adi, ok = QInputDialog.getText(self, self.t("dlg_repo_name_title"), self.t("dlg_repo_name_msg"), text=varsayilan_isim)
         if not (ok and repo_adi.strip()): return
         repo_adi = repo_adi.strip()
-        turler = ["public", "private"]
-        tur, ok = QInputDialog.getItem(self, self.t("dlg_visibility_title"), self.t("dlg_visibility_msg"), turler, 0, False)
+        turler = [self.t("visibility_public"), self.t("visibility_private")]
+        gorunurluk, ok = QInputDialog.getItem(
+            self, self.t("dlg_visibility_title"), self.t("dlg_visibility_msg"), turler, 0, False
+        )
         if not ok: return
+        tur = "public" if gorunurluk == self.t("visibility_public") else "private"
         self._pending_repo_creation_name = repo_adi
         self._start_git_operation(
             lambda motor: motor.github_repo_olustur(repo_adi, tur),
@@ -1358,7 +1377,7 @@ class GitGUI(QMainWindow):
             )
         else:
             QMessageBox.critical(self, self.t("hata"), self.t("err_repo_create").format(cikti))
-            self.konsol.yaz(f"HATA: {cikti}")
+            self.konsol.yaz(self.t("log_generic_error").format(cikti))
         self.butonlari_guncelle()
 
     def github_login(self):
@@ -1388,7 +1407,7 @@ class GitGUI(QMainWindow):
         QApplication.processEvents()
 
         QMessageBox.information(self, self.t("github_girisi"), self.t("kod_kopyalandi").format(kod))
-        webbrowser.open("https://github.com")
+        webbrowser.open("https://github.com/login/device")
         self.lbl_durum.setText(self.t("onay_bekleniyor"))
         self.konsol.yaz(self.t("log_onay_bekleniyor").format(kod))
 
@@ -1407,7 +1426,7 @@ class GitGUI(QMainWindow):
                 QMessageBox.critical(self, self.t("hata"), self.t("msg_onay_hata"))
                 self.konsol.yaz(self.t("log_onay_hata"))
             else:
-                QMessageBox.critical(self, self.t("hata"), f"Hata: {hata_kodu}")
+                QMessageBox.critical(self, self.t("hata"), self.t("msg_login_error").format(hata_kodu))
         self.butonlari_guncelle()
 
     def git_init(self):
@@ -1453,7 +1472,7 @@ class GitGUI(QMainWindow):
             self.btn_push.setEnabled(False)
             QApplication.processEvents()
 
-            self.push_isci = PushIscisi(self.motor.repo_path, force=False)
+            self.push_isci = PushIscisi(self.motor.repo_path, force=False, language=self.aktif_lang)
             self.push_isci.log_sinyali.connect(self.konsol.yaz)
             self.push_isci.sonuc_sinyali.connect(self.push_tamamlandi)
             self.push_isci.finished.connect(self.arka_plan_durumu_guncelle)
@@ -1481,21 +1500,38 @@ class GitGUI(QMainWindow):
                     self.lbl_durum.setText(self.t("msg_push_bekle"))
                     self._set_ui_lock(False)
                     QApplication.processEvents()
-                    self.push_isci = PushIscisi(self.motor.repo_path, force=True)
+                    self.push_isci = PushIscisi(self.motor.repo_path, force=True, language=self.aktif_lang)
                     self.push_isci.log_sinyali.connect(self.konsol.yaz)
                     self.push_isci.sonuc_sinyali.connect(self.force_push_tamamlandi)
                     self.push_isci.finished.connect(self.arka_plan_durumu_guncelle)
                     self.push_isci.start()
                     self.arka_plan_durumu_guncelle()
             else:
-                QMessageBox.critical(self, self.t("hata"), self.t("msg_push_hata").format(hata_mesaji))
+                self._push_hata_goster(hata_mesaji)
 
     def force_push_tamamlandi(self, basarili, mesaj):
         self.butonlari_guncelle()
         if basarili:
             QMessageBox.information(self, self.t("basarili"), self.t("msg_force_push_basarili"))
         else:
-            QMessageBox.critical(self, self.t("hata"), f"Force push başarısız oldu:\n{mesaj}")
+            self._push_hata_goster(str(mesaj), force=True)
+
+    def _push_hata_goster(self, hata_mesaji, force=False):
+        hata_kucuk = hata_mesaji.casefold()
+        if "workflow" in hata_kucuk and "scope" in hata_kucuk:
+            QMessageBox.warning(
+                self, self.t("hata"), self.t("msg_workflow_scope_required")
+            )
+            self.konsol.yaz(hata_mesaji)
+            return
+        if force:
+            QMessageBox.critical(
+                self, self.t("hata"), self.t("msg_force_push_error").format(hata_mesaji)
+            )
+        else:
+            QMessageBox.critical(
+                self, self.t("hata"), self.t("msg_push_hata").format(hata_mesaji)
+            )
 
     def git_restore(self):
         cevap = QMessageBox.warning(
@@ -1520,7 +1556,7 @@ class GitGUI(QMainWindow):
         if basarili:
             QMessageBox.information(self, self.t("basarili"), self.t("msg_restore_basarili"))
         else:
-            QMessageBox.critical(self, self.t("hata"), f"İptal işlemi başarısız:\n{hata}")
+            QMessageBox.critical(self, self.t("hata"), self.t("msg_cancel_failed").format(hata))
         self.butonlari_guncelle()
 
     def git_rollback(self):
@@ -1590,15 +1626,15 @@ class GitGUI(QMainWindow):
         hatalar = []
         if secim == self.t("opt_delete_local_git"):
             basarili, err = self.motor.yerel_git_sil()
-            if not basarili: hatalar.append(f"Yerel silme: {err}")
+            if not basarili: hatalar.append(self.t("msg_local_delete_error").format(err))
         elif secim == self.t("opt_delete_github_only"):
             basarili, err = self.motor.github_repo_sil(repo_adi, self.github_kullanici_adi)
-            if not basarili: hatalar.append(f"GitHub silme: {err}")
+            if not basarili: hatalar.append(self.t("msg_github_delete_error").format(err))
         elif secim == self.t("opt_delete_both"):
             basarili_gh, err_gh = self.motor.github_repo_sil(repo_adi, self.github_kullanici_adi)
-            if not basarili_gh: hatalar.append(f"GitHub silme: {err_gh}")
+            if not basarili_gh: hatalar.append(self.t("msg_github_delete_error").format(err_gh))
             basarili_loc, err_loc = self.motor.yerel_git_sil()
-            if not basarili_loc: hatalar.append(f"Yerel silme: {err_loc}")
+            if not basarili_loc: hatalar.append(self.t("msg_local_delete_error").format(err_loc))
         if hatalar:
             hata_metni = "\n".join(hatalar)
             if "delete_repo" in hata_metni:
@@ -1622,7 +1658,7 @@ class GitGUI(QMainWindow):
         self.btn_clone.setEnabled(False)
         QApplication.processEvents()
 
-        self.uzak_dal_isci = UzakDalIscisi(url)
+        self.uzak_dal_isci = UzakDalIscisi(url, self.aktif_lang)
         self.uzak_dal_isci.log_sinyali.connect(self.konsol.yaz)
         self.uzak_dal_isci.sonuc_sinyali.connect(self.uzak_dallar_tamamlandi)
         self.uzak_dal_isci.finished.connect(self.arka_plan_durumu_guncelle)
@@ -1688,11 +1724,11 @@ class GitGUI(QMainWindow):
                     sayac += 1
                 self.lbl_durum.setText(self.t("msg_cloning"))
                 dal_bilgisi = f" [Dal: {secilen_branch}]" if secilen_branch else ""
-                self.konsol.yaz(f"> Depo klonlanıyor (Arka Plan İşlemi){dal_bilgisi}: {url}")
+                self.konsol.yaz(self.t("log_clone_start").format(dal_bilgisi, url))
                 self._set_ui_lock(False)
                 self.btn_clone.setEnabled(False)
                 QApplication.processEvents()
-                self.isci = KlonlamaIscisi(url, hedef_tam_yol, secilen_branch)
+                self.isci = KlonlamaIscisi(url, hedef_tam_yol, secilen_branch, self.aktif_lang)
                 self.isci.log_sinyali.connect(self.konsol.yaz)
                 self.isci.sonuc_sinyali.connect(self.klonlama_tamamlandi)
                 self.isci.finished.connect(self.arka_plan_durumu_guncelle)
@@ -1799,8 +1835,8 @@ class GitGUI(QMainWindow):
 
                 sil_cevap = QMessageBox.question(
                     self,
-                    "Dal Temizliği",
-                    f"'{secim}' dalı başarıyla birleştirildi.\n\nArtık bu dala ihtiyacınız kalmadığı için kalabalık yapmaması adına silmek ister misiniz?",
+                    self.t("msg_branch_cleanup_title"),
+                    self.t("msg_branch_cleanup_prompt").format(secim),
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.Yes
                 )
@@ -1808,9 +1844,9 @@ class GitGUI(QMainWindow):
                 if sil_cevap == QMessageBox.Yes:
                     sil_basarili, sil_hata = self.motor.delete_branch(secim)
                     if sil_basarili:
-                        self.konsol.yaz(f"> '{secim}' dalı birleştirme sonrası temizlendi.")
+                        self.konsol.yaz(self.t("log_branch_cleanup_done").format(secim))
                     else:
-                        QMessageBox.warning(self, self.t("hata"), f"Dal silinemedi: {sil_hata}")
+                        QMessageBox.warning(self, self.t("hata"), self.t("msg_branch_delete_error").format(sil_hata))
             else:
                 if hata == "conflict":
                     dialog = CakismaCozucuDialog(self, self.motor, self.t)
@@ -1925,7 +1961,7 @@ class GitGUI(QMainWindow):
         self._set_ui_lock(False)
         QApplication.processEvents()
 
-        self.surum_isci = SurumIscisi(self.motor.repo_path, tag_adi, aciklama, dosya_yolu)
+        self.surum_isci = SurumIscisi(self.motor.repo_path, tag_adi, aciklama, dosya_yolu, self.aktif_lang)
         self.surum_isci.log_sinyali.connect(self.konsol.yaz)
         self.surum_isci.sonuc_sinyali.connect(lambda basarili, hata: self.surum_tamamlandi(basarili, hata, tag_adi))
         self.surum_isci.finished.connect(self.arka_plan_durumu_guncelle)
@@ -1968,7 +2004,7 @@ class GitGUI(QMainWindow):
         cozme_sonucu = dialog.exec()
         dialog.deleteLater()
         if cozme_sonucu != QDialog.Accepted:
-            self.konsol.yaz("> Rebase açık bırakıldı; çakışmalar henüz çözülmedi.")
+            self.konsol.yaz(self.t("log_rebase_left_open"))
             self.butonlari_guncelle()
         elif self.motor.is_in_conflict():
             QMessageBox.warning(self, self.t("hata"), self.t("err_rebase_unresolved"))
@@ -2003,12 +2039,12 @@ class GitGUI(QMainWindow):
             return
         toplam_commit = len(commitler)
         adet, ok1 = QInputDialog.getInt(
-            self, self.t("dlg_squash_count_title"), f"{self.t('dlg_squash_count_msg')} (Max: {toplam_commit})",
+            self, self.t("dlg_squash_count_title"), self.t("dlg_squash_count_prompt").format(toplam_commit),
             value=2, minValue=2, maxValue=toplam_commit, step=1
         )
         if not ok1: return
         birlestirilen_mesajlar = "\n".join([f"- {c['mesaj']}" for c in commitler[:adet]])
-        varsayilan_mesaj = f"Squashed {adet} commits:\n{birlestirilen_mesajlar}"
+        varsayilan_mesaj = self.t("msg_squash_default").format(adet, birlestirilen_mesajlar)
         yeni_mesaj, ok2 = QInputDialog.getMultiLineText(self, self.t("dlg_squash_msg_title"), self.t("dlg_squash_msg_msg"), text=varsayilan_mesaj)
         if not (ok2 and yeni_mesaj.strip()): return
         self._pending_squash_count = adet
@@ -2028,7 +2064,7 @@ class GitGUI(QMainWindow):
             if self.motor.has_remotes():
                 cevap = QMessageBox.question(self, self.t("dlg_squash_force_push_title"), self.t("dlg_squash_force_push_msg"), QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
                 if cevap == QMessageBox.Yes:
-                    self.push_isci = PushIscisi(self.motor.repo_path, force=True)
+                    self.push_isci = PushIscisi(self.motor.repo_path, force=True, language=self.aktif_lang)
                     self.push_isci.log_sinyali.connect(self.konsol.yaz)
                     self.push_isci.sonuc_sinyali.connect(self.force_push_tamamlandi)
                     self.push_isci.finished.connect(self.arka_plan_durumu_guncelle)
@@ -2060,7 +2096,7 @@ class GitGUI(QMainWindow):
             self.konsol.yaz("-----------------------")
             QMessageBox.information(self, self.t("lbl_local_tags"), sonuc)
         else:
-            QMessageBox.critical(self, self.t("hata"), f"Etiketler alınamadı:\n{sonuc}")
+            QMessageBox.critical(self, self.t("hata"), self.t("msg_tags_error").format(sonuc))
 
         self.butonlari_guncelle()
 
@@ -2068,7 +2104,7 @@ class GitGUI(QMainWindow):
         if not self.motor.repo_path:
             return
         cevap = QMessageBox.question(
-            self, "GitHub Actions", self.t("msg_clean_actions_confirm"),
+            self, self.t("dlg_actions_title"), self.t("msg_clean_actions_confirm"),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No
         )
         if cevap != QMessageBox.Yes:
@@ -2077,7 +2113,7 @@ class GitGUI(QMainWindow):
         self._set_ui_lock(False)
         QApplication.processEvents()
 
-        self.actions_isci = ActionsTemizleIscisi(self.motor.repo_path)
+        self.actions_isci = ActionsTemizleIscisi(self.motor.repo_path, self.aktif_lang)
         self.actions_isci.log_sinyali.connect(self.konsol.yaz)
         self.actions_isci.sonuc_sinyali.connect(self.actions_temizleme_tamamlandi)
         self.actions_isci.finished.connect(self.arka_plan_durumu_guncelle)
@@ -2200,7 +2236,7 @@ class GitGUI(QMainWindow):
             elif sonuc == "status_error":
                 QMessageBox.critical(self, self.t("hata"), self.t("err_status_unavailable"))
             else:
-                QMessageBox.critical(self, self.t("hata"), f"Stash hatası:\n{sonuc}")
+                QMessageBox.critical(self, self.t("hata"), self.t("msg_stash_error").format(sonuc))
 
     def git_stash_pop_yap(self):
         liste = self.motor.git_stash_list()
@@ -2256,7 +2292,7 @@ class GitGUI(QMainWindow):
                     c_dialog.deleteLater()
                     self.butonlari_guncelle()
                 else:
-                    QMessageBox.critical(self, self.t("hata"), f"Stash Pop hatası:\n{sonuc}")
+                    QMessageBox.critical(self, self.t("hata"), self.t("msg_stash_pop_error").format(sonuc))
 
         def drop_tiklandi():
             secili = list_widget.currentItem()
@@ -2281,7 +2317,7 @@ class GitGUI(QMainWindow):
                         list_widget.addItems(yeni_liste)
                         list_widget.setCurrentRow(0)
                 else:
-                    QMessageBox.critical(dialog, self.t("hata"), f"Stash Drop hatası:\n{hata}")
+                    QMessageBox.critical(dialog, self.t("hata"), self.t("msg_stash_drop_error").format(hata))
 
         btn_pop.clicked.connect(pop_tiklandi)
         btn_drop.clicked.connect(drop_tiklandi)

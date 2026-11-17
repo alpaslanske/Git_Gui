@@ -20,8 +20,19 @@ The application runs native Git and GitHub CLI commands under the hood using sub
     ```bash
     sudo dnf install git gh
     ```
+*   **Windows (winget):**
+    ```powershell
+    winget install --id Git.Git -e
+    winget install --id GitHub.cli -e
+    ```
+*   **macOS (Homebrew):**
+    ```bash
+    brew install git gh
+    ```
 
-> 🔐 **Important GitHub Authentication:** You must run `gh auth login` once in your local terminal to authenticate your machine via your default web browser. Additionally, if you plan to use the repository deletion feature directly from the GUI, grant the required permission scope by executing: `gh auth refresh -s delete_repo`.
+`git` and `gh` are system executables, not Python packages. `requirements.txt` only installs the Python dependencies; install the system tools with your operating system's package manager.
+
+> 🔐 **Important GitHub Authentication:** You must run `gh auth login` once in your local terminal to authenticate your machine via your default web browser. Pushing changes to `.github/workflows` also requires the `workflow` scope; grant it with `gh auth refresh -h github.com -s workflow`. For repository deletion, grant the required scope with `gh auth refresh -s delete_repo`.
 
 ---
 
@@ -34,7 +45,7 @@ To set up an isolated development environment and run the project from source, e
 python3 -m venv venv
 source venv/bin/activate
 
-# Install the required dependencies
+# Install Python dependencies (Git and GitHub CLI are installed separately above)
 pip install -r requirements.txt
 
 # Launch the application

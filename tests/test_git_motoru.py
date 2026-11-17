@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from git_motoru import GitMotoru
+from lang import METINLER
 
 
 class GitMotoruTests(unittest.TestCase):
@@ -45,6 +46,17 @@ class GitMotoruTests(unittest.TestCase):
 
         self.assertIsNone(is_clean)
         self.assertEqual(status, "permission denied")
+
+    def test_engine_status_message_uses_selected_language(self):
+        english_motor = GitMotoru("en")
+
+        self.assertEqual(
+            english_motor.get_status(),
+            (None, "No Git repository is selected."),
+        )
+
+    def test_translation_catalogs_have_matching_keys(self):
+        self.assertEqual(set(METINLER["tr"]), set(METINLER["en"]))
 
     def test_rebase_conflict_remains_available_for_resolution(self):
         self.commit_file("base\n", "base")

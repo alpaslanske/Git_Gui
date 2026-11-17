@@ -1,0 +1,51 @@
+name: AppImage Otomatik Paketleme
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+# Aynı etiket için aynı anda birden fazla iş akışının çakışmasını önler
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Kodları Çek
+      uses: actions/checkout@v4
+
+    - name: AppImage Hazırla
+      run: |
+        wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x appimagetool-x86_64.AppImage
+
+    - name: AppImage Derle
+      run: |
+        APPIMAGETOOL=./appimagetool-x86_64.AppImage ./build.sh
+
+    - name: GitHub Release Olarak Yayınla
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG_NAME: ${{ github.ref_name }}
+        REPO: ${{ github.repository }}
+      run: |
+        # Mevcut sürüm varsa bul, yoksa doğrudan yayında (draft: false) oluştur
+        RELEASE_ID=$(gh api "repos/$REPO/releases" --jq ".[] | select(.tag_name == \"$TAG_NAME\") | .id" | head -n 1)
+
+        if [ -z "$RELEASE_ID" ]; then
+          gh api -X POST "repos/$REPO/releases" \
+            -f tag_name="$TAG_NAME" \
+            -f name="$TAG_NAME" \
+            -F draft=false \
+            -F generate_release_notes=true >/dev/null
+        fi
+
+        # Dosyayı doğrudan yayınlanmış sürümün içine yükle
+        gh release upload "$TAG_NAME" Git_Gui_Portable-x86_64.AppImage --clobber

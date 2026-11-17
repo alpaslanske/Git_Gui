@@ -2,11 +2,18 @@ import os
 import shutil
 import subprocess
 
+from lang import translate
+
+
 class GitMotoru:
-    def __init__(self):
+    def __init__(self, language="tr"):
         self.repo_path = ""
         self.repo_exists = False
         self.log_callback = None
+        self.language = language
+
+    def _t(self, key):
+        return translate(self.language, key)
 
     def komut_logla(self, komut_metni):
         if self.log_callback:
@@ -46,7 +53,7 @@ class GitMotoru:
                     env["GIT_WORK_TREE"] = work_tree
                     env["GIT_DIR"] = self.repo_path
                 else:
-                    raise Exception("Bare (çıplak) depo kullanıyorsunuz ancak 'core.worktree' ayarı bulunamadı.")
+                    raise Exception(self._t("msg_bare_repo_config_missing"))
         return env
 
     def get_active_branch(self):
@@ -88,7 +95,7 @@ class GitMotoru:
                     branches.append(line.strip())
             return branches, active_branch
         except Exception as e:
-            self.komut_logla(f"HATA (Branch List): {e}")
+            self.komut_logla(self._t("log_error_branch_list").format(e))
             return [], ""
 
     def create_and_switch_branch(self, branch_name):
@@ -175,15 +182,15 @@ class GitMotoru:
 
             return True, {"ileri": 0, "geri": 0}
         except subprocess.CalledProcessError as e:
-            self.komut_logla(f"HATA (Fetch): {e.stderr or str(e)}")
+            self.komut_logla(self._t("log_error_fetch").format(e.stderr or str(e)))
             return False, e.stderr or str(e)
         except Exception as e:
-            self.komut_logla(f"HATA (Fetch): {e}")
+            self.komut_logla(self._t("log_error_fetch").format(e))
             return False, str(e)
 
     def get_status(self):
         if not self.repo_exists:
-            return None, "Git deposu seçili değil."
+            return None, self._t("msg_status_no_repo")
         try:
             env = self.get_git_env()
             short_res = subprocess.run(
@@ -191,7 +198,7 @@ class GitMotoru:
                 capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=10
             )
             if short_res.returncode != 0:
-                return None, short_res.stderr or short_res.stdout or "Git durumu okunamadı."
+                return None, short_res.stderr or short_res.stdout or self._t("msg_git_status_unavailable")
             is_clean = len(short_res.stdout.strip()) == 0
 
             full_res = subprocess.run(
@@ -199,10 +206,10 @@ class GitMotoru:
                 text=True, encoding='utf-8', errors='replace', timeout=10
             )
             if full_res.returncode != 0:
-                return None, full_res.stderr or full_res.stdout or "Git durumu okunamadı."
+                return None, full_res.stderr or full_res.stdout or self._t("msg_git_status_unavailable")
             return is_clean, full_res.stdout
         except Exception as e:
-            return None, f"Status okunamadı: {e}"
+            return None, self._t("msg_status_read_error").format(e)
 
     def git_init(self):
         if self.repo_path:
@@ -236,23 +243,23 @@ class GitMotoru:
 
                 if result.returncode != 0:
                     if "nothing to commit" in result.stdout or "nothing to commit" in result.stderr:
-                        self.komut_logla("Bilgi: Kaydedilecek yeni bir değişiklik yok.")
+                        self.komut_logla(self._t("log_commit_nothing"))
                         return True
-                    self.komut_logla(f"HATA: {result.stderr or result.stdout}")
+                    self.komut_logla(self._t("log_generic_error").format(result.stderr or result.stdout))
                     return False
 
                 return True
             except subprocess.CalledProcessError as e:
-                self.komut_logla(f"HATA: (git add) {e.stderr or str(e)}")
+                self.komut_logla(self._t("log_error_add").format(e.stderr or str(e)))
                 return False
             except Exception as e:
-                self.komut_logla(f"HATA: {e}")
+                self.komut_logla(self._t("log_generic_error").format(e))
                 return False
         return False
 
     def github_repo_olustur(self, repo_adi, visibility="public"):
         if not self.repo_path:
-            return False, "Repo yolu tanımlı değil."
+            return False, self._t("msg_repo_path_not_defined")
         try:
             env = self.get_git_env()
             cmd = ["gh", "repo", "create", repo_adi, f"--{visibility}", "--source", ".", "--remote", "origin"]
@@ -284,10 +291,10 @@ class GitMotoru:
                 subprocess.run(["git", "remote", "add", "origin", url], cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
             except subprocess.CalledProcessError as e:
                 if "already exists" in e.stderr:
-                    self.komut_logla("> 'origin' zaten mevcut, URL güncelleniyor...")
+                    self.komut_logla(self._t("log_origin_exists"))
                     subprocess.run(["git", "remote", "set-url", "origin", url], cwd=self.repo_path, env=env, check=True)
                 else:
-                    self.komut_logla(f"HATA (Remote Ekleme): {e.stderr}")
+                    self.komut_logla(self._t("log_error_remote_add").format(e.stderr))
                     raise Exception(e.stderr)
 
     def git_push(self, force=False):
@@ -307,7 +314,7 @@ class GitMotoru:
                 return aktif_branch
             except subprocess.CalledProcessError as e:
                 hata_detay = e.stderr or e.stdout
-                self.komut_logla(f"HATA (Push): {hata_detay}")
+                self.komut_logla(self._t("log_error_push").format(hata_detay))
                 raise Exception(hata_detay)
         return None
 
@@ -325,7 +332,7 @@ class GitMotoru:
   
             if res.returncode != 0:
                 hata_metni = (res.stderr or res.stdout)
-                self.komut_logla(f"HATA (Rebase): {hata_metni}")
+                self.komut_logla(self._t("log_error_rebase").format(hata_metni))
                 
                 if self.is_in_conflict(res.stderr or res.stdout):
                     subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
@@ -337,7 +344,7 @@ class GitMotoru:
                 
             return True, "ok"
         except Exception as e:
-            self.komut_logla(f"HATA: {e}")
+            self.komut_logla(self._t("log_generic_error").format(e))
             subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=self.get_git_env(), capture_output=True)
             return False, "hata"
 
@@ -353,10 +360,10 @@ class GitMotoru:
                 )
                 return True
             except subprocess.CalledProcessError as e:
-                self.komut_logla(f"HATA: (Rollback) {e.stderr or str(e)}")
+                self.komut_logla(self._t("log_error_rollback").format(e.stderr or str(e)))
                 return False
             except Exception as e:
-                self.komut_logla(f"HATA: {e}")
+                self.komut_logla(self._t("log_generic_error").format(e))
                 return False
         return False
 
@@ -393,10 +400,10 @@ class GitMotoru:
         except subprocess.CalledProcessError as e:
             if "does not have any commits" in e.stderr or "fatal: your current branch" in e.stderr:
                 return []
-            self.komut_logla(f"HATA (Geçmiş): {e.stderr}")
+            self.komut_logla(self._t("log_error_history").format(e.stderr))
             return None
         except Exception as e:
-            self.komut_logla(f"HATA (Geçmiş): {e}")
+            self.komut_logla(self._t("log_error_history").format(e))
             return None
 
     def yerel_git_sil(self):
@@ -409,9 +416,9 @@ class GitMotoru:
                 self.komut_logla(f"> rm -rf {git_klasoru}")
                 self.repo_exists = False
                 return True, "ok"
-            return False, ".git klasörü bulunamadı."
+            return False, self._t("msg_local_git_missing")
         except Exception as e:
-            self.komut_logla(f"HATA (Yerel Sil): {e}")
+            self.komut_logla(self._t("log_generic_error").format(e))
             return False, str(e)
 
     def github_repo_sil(self, repo_adi, kullanici_adi=""):
@@ -423,10 +430,10 @@ class GitMotoru:
             return True, res.stdout
         except subprocess.CalledProcessError as e:
             hata = e.stderr or e.stdout
-            self.komut_logla(f"HATA (GitHub Sil): {hata}")
+            self.komut_logla(self._t("log_error_github_delete").format(hata))
             return False, hata
         except Exception as e:
-            self.komut_logla(f"HATA (GitHub Sil): {e}")
+            self.komut_logla(self._t("log_error_github_delete").format(e))
             return False, str(e)
 
     def get_remote_branches(self, url):
@@ -439,7 +446,7 @@ class GitMotoru:
                 capture_output=True, text=True, env=env, timeout=15, encoding='utf-8', errors='replace'
             )
             if res.returncode != 0:
-                return False, res.stderr.strip() or "Uzak depo okunamadı."
+                return False, res.stderr.strip() or self._t("msg_remote_read_failed")
 
             branches = []
             for line in res.stdout.splitlines():
@@ -449,14 +456,14 @@ class GitMotoru:
                         branches.append(branch_name)
             return True, branches
         except subprocess.TimeoutExpired:
-            return False, "Bağlantı zaman aşımına uğradı (Timeout)."
+            return False, self._t("msg_network_timeout")
         except Exception as e:
             return False, str(e)
 
     def git_clone(self, url, hedef_dizin, branch=""):
         try:
             if os.path.exists(hedef_dizin):
-                return False, "Klonlama hedefi zaten mevcut; mevcut dosyalara dokunulmadı."
+                return False, self._t("msg_clone_target_exists")
 
             cmd = ["git", "clone"]
             if branch and branch != "__ALL__":
@@ -474,7 +481,7 @@ class GitMotoru:
 
             # Eğer "Tüm Dallar" seçildiyse uzak dalların hepsini yerelde oluştur
             if branch == "__ALL__":
-                self.komut_logla("> Tüm uzak dallar yerel olarak oluşturuluyor...")
+                self.komut_logla(self._t("log_clone_all_branches"))
                 res_b = subprocess.run(
                     ["git", "branch", "-r"], cwd=hedef_dizin, capture_output=True, text=True, encoding='utf-8', errors='replace'
                 )
@@ -493,10 +500,10 @@ class GitMotoru:
             return True, res.stdout
         except subprocess.CalledProcessError as e:
             hata = e.stderr or e.stdout or str(e)
-            self.komut_logla(f"HATA (Clone): {hata}")
+            self.komut_logla(self._t("log_error_clone").format(hata))
             return False, hata
         except Exception as e:
-            self.komut_logla(f"HATA (Clone Genel): {str(e)}")
+            self.komut_logla(self._t("log_error_clone_general").format(e))
             return False, str(e)
 
 
@@ -543,27 +550,27 @@ class GitMotoru:
 
         except subprocess.CalledProcessError as e:
             hata = e.stderr or e.stdout or str(e)
-            self.komut_logla(f"HATA (Sürüm): {hata}")
+            self.komut_logla(self._t("log_error_release").format(hata))
 
             # --- TEMİZLİK (ROLLBACK) İŞLEMİ ---
             if uzak_tag_olustu:
-                self.komut_logla(f"> İşlem iptal ediliyor... Uzak sunucudaki '{tag_adi}' etiketi temizleniyor.")
+                self.komut_logla(self._t("log_tag_cleanup_remote").format(tag_adi))
                 subprocess.run(["git", "push", "--delete", "origin", tag_adi], cwd=self.repo_path, env=env, capture_output=True)
             if yerel_tag_olustu:
-                self.komut_logla(f"> İşlem iptal ediliyor... Yereldeki '{tag_adi}' etiketi temizleniyor.")
+                self.komut_logla(self._t("log_tag_cleanup_local").format(tag_adi))
                 subprocess.run(["git", "tag", "-d", tag_adi], cwd=self.repo_path, env=env, capture_output=True)
 
             return False, hata
 
         except Exception as e:
-            self.komut_logla(f"HATA (Sürüm Genel): {str(e)}")
+            self.komut_logla(self._t("log_error_release_general").format(e))
 
             # --- TEMİZLİK (ROLLBACK) İŞLEMİ ---
             if uzak_tag_olustu:
-                self.komut_logla(f"> İşlem iptal ediliyor... Uzak sunucudaki '{tag_adi}' etiketi temizleniyor.")
+                self.komut_logla(self._t("log_tag_cleanup_remote").format(tag_adi))
                 subprocess.run(["git", "push", "--delete", "origin", tag_adi], cwd=self.repo_path, env=env, capture_output=True)
             if yerel_tag_olustu:
-                self.komut_logla(f"> İşlem iptal ediliyor... Yereldeki '{tag_adi}' etiketi temizleniyor.")
+                self.komut_logla(self._t("log_tag_cleanup_local").format(tag_adi))
                 subprocess.run(["git", "tag", "-d", tag_adi], cwd=self.repo_path, env=env, capture_output=True)
 
             return False, str(e)
@@ -584,7 +591,7 @@ class GitMotoru:
             
             if res.returncode != 0:
                 hata_metni = (res.stderr or res.stdout)
-                self.komut_logla(f"HATA (Rebase): {hata_metni}")
+                self.komut_logla(self._t("log_error_rebase").format(hata_metni))
                 
                 if self.is_in_conflict(res.stderr or res.stdout):
                     return False, "conflict"
@@ -595,7 +602,7 @@ class GitMotoru:
                 return False, res.stderr or res.stdout
             return True, "ok"
         except Exception as e:
-            self.komut_logla(f"HATA: {e}")
+            self.komut_logla(self._t("log_generic_error").format(e))
             subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=self.get_git_env(), capture_output=True)
             return False, str(e)
 
@@ -612,9 +619,9 @@ class GitMotoru:
             )
             if res.returncode == 0:
                 return True, res.stdout or "ok"
-            return False, res.stderr or res.stdout or "Rebase devam ettirilemedi."
+            return False, res.stderr or res.stdout or self._t("msg_rebase_continue_failed")
         except Exception as e:
-            self.komut_logla(f"HATA (Rebase Continue): {e}")
+            self.komut_logla(self._t("log_error_rebase_continue").format(e))
             return False, str(e)
 
     def git_squash(self, commit_adedi, yeni_mesaj):
@@ -654,7 +661,7 @@ class GitMotoru:
             return True, "ok"
         except subprocess.CalledProcessError as e:
             hata = e.stderr or e.stdout or str(e)
-            self.komut_logla(f"HATA (Squash): {hata}")
+            self.komut_logla(self._t("log_error_squash").format(hata))
             if "original_head" in locals():
                 try:
                     subprocess.run(
@@ -662,13 +669,13 @@ class GitMotoru:
                         env=env, check=True, capture_output=True, text=True,
                         encoding='utf-8', errors='replace', timeout=30
                     )
-                    self.komut_logla("> Squash başarısız olduğu için başlangıç commit'i geri yüklendi.")
+                    self.komut_logla(self._t("log_squash_restored"))
                 except Exception as rollback_error:
-                    hata = f"{hata}\nSquash geri alınamadı: {rollback_error}"
-                    self.komut_logla(f"HATA (Squash Geri Alma): {rollback_error}")
+                    hata = f"{hata}\n{self._t('log_squash_restore_failed').format(rollback_error)}"
+                    self.komut_logla(self._t("log_error_squash_rollback").format(rollback_error))
             return False, hata
         except Exception as e:
-            self.komut_logla(f"HATA (Squash): {e}")
+            self.komut_logla(self._t("log_error_squash").format(e))
             if "original_head" in locals():
                 try:
                     subprocess.run(
@@ -676,10 +683,10 @@ class GitMotoru:
                         env=env, check=True, capture_output=True, text=True,
                         encoding='utf-8', errors='replace', timeout=30
                     )
-                    self.komut_logla("> Squash başarısız olduğu için başlangıç commit'i geri yüklendi.")
+                    self.komut_logla(self._t("log_squash_restored"))
                 except Exception as rollback_error:
-                    e = RuntimeError(f"{e}\nSquash geri alınamadı: {rollback_error}")
-                    self.komut_logla(f"HATA (Squash Geri Alma): {rollback_error}")
+                    e = RuntimeError(f"{e}\n{self._t('log_squash_restore_failed').format(rollback_error)}")
+                    self.komut_logla(self._t("log_error_squash_rollback").format(rollback_error))
             return False, str(e)
 
     def yerel_taglari_getir(self):
@@ -691,10 +698,10 @@ class GitMotoru:
             res = subprocess.run(["git", "tag", "-n"], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
             if res.returncode == 0:
                 taglar = res.stdout.strip()
-                return True, taglar if taglar else "Yerelde henüz bir etiket (tag) bulunmuyor."
+                return True, taglar if taglar else self._t("msg_no_local_tags")
             return False, res.stderr or res.stdout
         except Exception as e:
-            self.komut_logla(f"HATA (Tag Listeleme): {e}")
+            self.komut_logla(self._t("log_error_tag_list").format(e))
             return False, str(e)
 
     def get_remotes_list(self):
@@ -722,8 +729,8 @@ class GitMotoru:
             subprocess.run(["git", "remote", "add", isim, url], cwd=self.repo_path, env=self.get_git_env(), check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
             return True, "ok"
         except subprocess.CalledProcessError as e:
-            self.komut_logla(f"HATA: {e.stderr}")
-            return False, e.stderr or "Bilinmeyen Hata"
+            self.komut_logla(self._t("log_generic_error").format(e.stderr))
+            return False, e.stderr or self._t("msg_unknown_error")
 
     def remove_remote(self, isim):
         if not self.repo_exists:
@@ -733,8 +740,8 @@ class GitMotoru:
             subprocess.run(["git", "remote", "remove", isim], cwd=self.repo_path, env=self.get_git_env(), check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
             return True, "ok"
         except subprocess.CalledProcessError as e:
-            self.komut_logla(f"HATA: {e.stderr}")
-            return False, e.stderr or "Unknown error"
+            self.komut_logla(self._t("log_generic_error").format(e.stderr))
+            return False, e.stderr or self._t("msg_unknown_error")
             
     def get_conflicted_files(self):
         if not self.repo_exists: return []
@@ -744,7 +751,7 @@ class GitMotoru:
             res = subprocess.run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8')
             return [line.strip() for line in res.stdout.splitlines() if line.strip()]
         except Exception as e:
-            self.komut_logla(f"HATA (Conflict List): {e}")
+            self.komut_logla(self._t("log_error_conflict_list").format(e))
             return []
 
     def mark_resolved(self, dosya_yolu):
@@ -755,7 +762,7 @@ class GitMotoru:
             subprocess.run(["git", "add", dosya_yolu], cwd=self.repo_path, env=env, check=True)
             return True
         except Exception as e:
-            self.komut_logla(f"HATA (Resolve): {e}")
+            self.komut_logla(self._t("log_error_resolve").format(e))
             return False
 
     def is_in_conflict(self, git_ciktisi=""):
@@ -778,7 +785,7 @@ class GitMotoru:
             )
             return len(res.stdout.strip()) > 0
         except Exception as e:
-            self.komut_logla(f"HATA (Conflict Kontrol): {e}")
+            self.komut_logla(self._t("log_error_conflict_check").format(e))
             return False
 
     def git_restore_all(self):
@@ -801,7 +808,7 @@ class GitMotoru:
             
             return True, "ok"
         except Exception as e:
-            self.komut_logla(f"HATA (Restore): {e}")
+            self.komut_logla(self._t("log_error_restore").format(e))
             return False, str(e)
     def git_stash_save(self, mesaj=""):
         if not self.repo_exists:
@@ -824,7 +831,7 @@ class GitMotoru:
                 return True, "ok"
             return False, res.stderr or res.stdout
         except Exception as e:
-            self.komut_logla(f"HATA (Stash): {e}")
+            self.komut_logla(self._t("log_error_stash").format(e))
             return False, str(e)
 
     def git_stash_list(self):
@@ -863,7 +870,7 @@ class GitMotoru:
                 return False, "conflict"
             return False, res.stderr or res.stdout
         except Exception as e:
-            self.komut_logla(f"HATA (Stash Pop): {e}")
+            self.komut_logla(self._t("log_error_stash_pop").format(e))
             return False, str(e)
 
     def git_stash_drop(self, stash_ref=""):
@@ -881,5 +888,5 @@ class GitMotoru:
                 return True, "ok"
             return False, res.stderr or res.stdout
         except Exception as e:
-            self.komut_logla(f"HATA (Stash Drop): {e}")
+            self.komut_logla(self._t("log_error_stash_drop").format(e))
             return False, str(e)
