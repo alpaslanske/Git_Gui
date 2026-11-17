@@ -73,7 +73,10 @@ class GitMotoru:
             return [], ""
         try:
             env = self.get_git_env()
-            res = subprocess.run(["git", "branch"], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            res = subprocess.run(
+                ["git", "branch"], cwd=self.repo_path, env=env, capture_output=True,
+                text=True, encoding='utf-8', errors='replace', timeout=15
+            )
             branches = []
             active_branch = ""
             for line in res.stdout.splitlines():
@@ -150,7 +153,11 @@ class GitMotoru:
                 return False, "no_remote"
 
             self.komut_logla("> git fetch origin")
-            subprocess.run(["git", "fetch", "origin"], cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            subprocess.run(
+                ["git", "fetch", "origin"], cwd=self.repo_path, env=env, check=True,
+                capture_output=True, text=True, encoding='utf-8', errors='replace',
+                timeout=180
+            )
 
             aktif_branch = self.get_active_branch()
             rev_kontrol = subprocess.run(
@@ -159,7 +166,7 @@ class GitMotoru:
                 env=env,
                 capture_output=True,
                 text=True,
-                check=True, encoding='utf-8', errors='replace'
+                check=True, encoding='utf-8', errors='replace', timeout=15
             )
 
             sayilar = rev_kontrol.stdout.strip().split()
@@ -176,21 +183,34 @@ class GitMotoru:
 
     def get_status(self):
         if not self.repo_exists:
-            return False, ""
+            return None, "Git deposu seçili değil."
         try:
             env = self.get_git_env()
-            short_res = subprocess.run(["git", "status", "--short"], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            short_res = subprocess.run(
+                ["git", "status", "--short"], cwd=self.repo_path, env=env,
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=10
+            )
+            if short_res.returncode != 0:
+                return None, short_res.stderr or short_res.stdout or "Git durumu okunamadı."
             is_clean = len(short_res.stdout.strip()) == 0
 
-            full_res = subprocess.run(["git", "status"], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            full_res = subprocess.run(
+                ["git", "status"], cwd=self.repo_path, env=env, capture_output=True,
+                text=True, encoding='utf-8', errors='replace', timeout=10
+            )
+            if full_res.returncode != 0:
+                return None, full_res.stderr or full_res.stdout or "Git durumu okunamadı."
             return is_clean, full_res.stdout
         except Exception as e:
-            return False, f"Status okunamadı: {e}"
+            return None, f"Status okunamadı: {e}"
 
     def git_init(self):
         if self.repo_path:
             self.komut_logla(f"> git init {self.repo_path}")
-            res = subprocess.run(["git", "init", self.repo_path], capture_output=True, text=True, encoding='utf-8', errors='replace')
+            res = subprocess.run(
+                ["git", "init", self.repo_path], capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=30
+            )
             if res.returncode == 0:
                 self.repo_exists = True
                 return True
@@ -201,10 +221,18 @@ class GitMotoru:
             try:
                 env = self.get_git_env()
                 self.komut_logla("> git add -A")
-                subprocess.run(["git", "add", "-A"], cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+                subprocess.run(
+                    ["git", "add", "-A"], cwd=self.repo_path, env=env, check=True,
+                    capture_output=True, text=True, encoding='utf-8', errors='replace',
+                    timeout=120
+                )
 
                 self.komut_logla(f'> git commit -m "{mesaj}"')
-                result = subprocess.run(["git", "commit", "-m", mesaj], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+                result = subprocess.run(
+                    ["git", "commit", "-m", mesaj], cwd=self.repo_path, env=env,
+                    capture_output=True, text=True, encoding='utf-8', errors='replace',
+                    timeout=120
+                )
 
                 if result.returncode != 0:
                     if "nothing to commit" in result.stdout or "nothing to commit" in result.stderr:
@@ -267,12 +295,15 @@ class GitMotoru:
             aktif_branch = self.get_active_branch()
             cmd = ["git", "push", "-u", "origin", aktif_branch]
             if force:
-                cmd.append("--force")
+                cmd.append("--force-with-lease")
 
             self.komut_logla(f"> {' '.join(cmd)}")
             try:
                 env = self.get_git_env()
-                subprocess.run(cmd, cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+                subprocess.run(
+                    cmd, cwd=self.repo_path, env=env, check=True, capture_output=True,
+                    text=True, encoding='utf-8', errors='replace', timeout=120
+                )
                 return aktif_branch
             except subprocess.CalledProcessError as e:
                 hata_detay = e.stderr or e.stdout
@@ -315,10 +346,11 @@ class GitMotoru:
             self.komut_logla(f"> git reset --hard {hedef_hash}")
             try:
                 env = self.get_git_env()
-                subprocess.run(["git", "reset", "--hard", hedef_hash], cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
-                self.komut_logla("> git restore .")
-                subprocess.run(["git", "restore", "."], cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
-                subprocess.run(["git", "checkout", "."], cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+                subprocess.run(
+                    ["git", "reset", "--hard", hedef_hash], cwd=self.repo_path, env=env,
+                    check=True, capture_output=True, text=True, encoding='utf-8',
+                    errors='replace', timeout=120
+                )
                 return True
             except subprocess.CalledProcessError as e:
                 self.komut_logla(f"HATA: (Rollback) {e.stderr or str(e)}")
@@ -423,6 +455,9 @@ class GitMotoru:
 
     def git_clone(self, url, hedef_dizin, branch=""):
         try:
+            if os.path.exists(hedef_dizin):
+                return False, "Klonlama hedefi zaten mevcut; mevcut dosyalara dokunulmadı."
+
             cmd = ["git", "clone"]
             if branch and branch != "__ALL__":
                 cmd.extend(["-b", branch])
@@ -433,7 +468,8 @@ class GitMotoru:
             env["GIT_TERMINAL_PROMPT"] = "0"
             res = subprocess.run(
                 cmd,
-                capture_output=True, text=True, env=env, check=True, encoding='utf-8', errors='replace'
+                capture_output=True, text=True, env=env, check=True,
+                encoding='utf-8', errors='replace', timeout=600
             )
 
             # Eğer "Tüm Dallar" seçildiyse uzak dalların hepsini yerelde oluştur
@@ -458,15 +494,9 @@ class GitMotoru:
         except subprocess.CalledProcessError as e:
             hata = e.stderr or e.stdout or str(e)
             self.komut_logla(f"HATA (Clone): {hata}")
-            if os.path.exists(hedef_dizin):
-                try: shutil.rmtree(hedef_dizin)
-                except Exception: pass
             return False, hata
         except Exception as e:
             self.komut_logla(f"HATA (Clone Genel): {str(e)}")
-            if os.path.exists(hedef_dizin):
-                try: shutil.rmtree(hedef_dizin)
-                except Exception: pass
             return False, str(e)
 
 
@@ -549,7 +579,7 @@ class GitMotoru:
                 cwd=self.repo_path,
                 env=env,
                 capture_output=True,
-                text=True, encoding='utf-8', errors='replace'
+                text=True, encoding='utf-8', errors='replace', timeout=120
             )
             
             if res.returncode != 0:
@@ -557,7 +587,6 @@ class GitMotoru:
                 self.komut_logla(f"HATA (Rebase): {hata_metni}")
                 
                 if self.is_in_conflict(res.stderr or res.stdout):
-                    subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
                     return False, "conflict"
                     
                 subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
@@ -570,15 +599,40 @@ class GitMotoru:
             subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=self.get_git_env(), capture_output=True)
             return False, str(e)
 
+    def git_rebase_continue(self):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            self.komut_logla("> git -c core.editor=true rebase --continue")
+            res = subprocess.run(
+                ["git", "-c", "core.editor=true", "rebase", "--continue"],
+                cwd=self.repo_path, env=env, capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=120
+            )
+            if res.returncode == 0:
+                return True, res.stdout or "ok"
+            return False, res.stderr or res.stdout or "Rebase devam ettirilemedi."
+        except Exception as e:
+            self.komut_logla(f"HATA (Rebase Continue): {e}")
+            return False, str(e)
+
     def git_squash(self, commit_adedi, yeni_mesaj):
         if not self.repo_exists:
             return False, "repo_yok"
         try:
             is_clean, _ = self.get_status()
+            if is_clean is None:
+                return False, "status_error"
             if not is_clean:
                 return False, "working_tree_dirty"
 
             env = self.get_git_env()
+            original_head = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=self.repo_path, env=env,
+                check=True, capture_output=True, text=True, encoding='utf-8',
+                errors='replace', timeout=30
+            ).stdout.strip()
             self.komut_logla(f"> git reset --soft HEAD~{commit_adedi}")
             subprocess.run(
                 ["git", "reset", "--soft", f"HEAD~{commit_adedi}"],
@@ -586,7 +640,7 @@ class GitMotoru:
                 env=env,
                 capture_output=True,
                 text=True,
-                check=True, encoding='utf-8', errors='replace'
+                check=True, encoding='utf-8', errors='replace', timeout=120
             )
             self.komut_logla(f'> git commit -m "{yeni_mesaj}"')
             subprocess.run(
@@ -595,15 +649,37 @@ class GitMotoru:
                 env=env,
                 capture_output=True,
                 text=True,
-                check=True, encoding='utf-8', errors='replace'
+                check=True, encoding='utf-8', errors='replace', timeout=120
             )
             return True, "ok"
         except subprocess.CalledProcessError as e:
             hata = e.stderr or e.stdout or str(e)
             self.komut_logla(f"HATA (Squash): {hata}")
+            if "original_head" in locals():
+                try:
+                    subprocess.run(
+                        ["git", "reset", "--soft", original_head], cwd=self.repo_path,
+                        env=env, check=True, capture_output=True, text=True,
+                        encoding='utf-8', errors='replace', timeout=30
+                    )
+                    self.komut_logla("> Squash başarısız olduğu için başlangıç commit'i geri yüklendi.")
+                except Exception as rollback_error:
+                    hata = f"{hata}\nSquash geri alınamadı: {rollback_error}"
+                    self.komut_logla(f"HATA (Squash Geri Alma): {rollback_error}")
             return False, hata
         except Exception as e:
             self.komut_logla(f"HATA (Squash): {e}")
+            if "original_head" in locals():
+                try:
+                    subprocess.run(
+                        ["git", "reset", "--soft", original_head], cwd=self.repo_path,
+                        env=env, check=True, capture_output=True, text=True,
+                        encoding='utf-8', errors='replace', timeout=30
+                    )
+                    self.komut_logla("> Squash başarısız olduğu için başlangıç commit'i geri yüklendi.")
+                except Exception as rollback_error:
+                    e = RuntimeError(f"{e}\nSquash geri alınamadı: {rollback_error}")
+                    self.komut_logla(f"HATA (Squash Geri Alma): {rollback_error}")
             return False, str(e)
 
     def yerel_taglari_getir(self):
@@ -710,10 +786,18 @@ class GitMotoru:
         try:
             env = self.get_git_env()
             self.komut_logla("> git reset --hard HEAD")
-            subprocess.run(["git", "reset", "--hard", "HEAD"], cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            subprocess.run(
+                ["git", "reset", "--hard", "HEAD"], cwd=self.repo_path, env=env,
+                check=True, capture_output=True, text=True, encoding='utf-8',
+                errors='replace', timeout=120
+            )
             
             self.komut_logla("> git clean -fd")
-            subprocess.run(["git", "clean", "-fd"], cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            subprocess.run(
+                ["git", "clean", "-fd"], cwd=self.repo_path, env=env, check=True,
+                capture_output=True, text=True, encoding='utf-8', errors='replace',
+                timeout=120
+            )
             
             return True, "ok"
         except Exception as e:
@@ -724,6 +808,8 @@ class GitMotoru:
             return False, "repo_yok"
         try:
             is_clean, _ = self.get_status()
+            if is_clean is None:
+                return False, "status_error"
             if is_clean:
                 return False, "empty"
 

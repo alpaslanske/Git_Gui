@@ -43,15 +43,18 @@ python3 git_gui.py
 
 ---
 
-## 📦 3. One-Click Portable AppImage Build
+## 📦 3. AppImage Build
 
-The repository includes a custom build automation utility to instantly compile your project into a self-contained, standalone `.AppImage` executable that runs seamlessly across all major Linux distributions:
+Install `appimagetool`, then build the AppImage with:
 
 ```bash
+chmod +x build.sh
 ./build.sh
 ```
 
-This compilation automation script automatically enforces correct Linux file permissions, links the executable entry point via a local `AppRun` symlink, and generates a lightweight, single-file **`Git_Gui_Portable-x86_64.AppImage`** executable (~15MB) ready for distribution.
+The output is `Git_Gui_Portable-x86_64.AppImage`. This packages the application files and launcher, but not Python, PySide6, Git, or GitHub CLI. Those must be installed on the target Linux system; use the system requirements above and install the Python dependencies with `pip install -r requirements.txt`.
+
+The GitHub release workflow builds the same AppImage when a `v*` tag is pushed.
 
 ---
 *Developed with ❤️ for Open Source Developers and Automation Engineers.*

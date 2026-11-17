@@ -18,51 +18,18 @@ jobs:
     - name: Kodları Çek
       uses: actions/checkout@v4
 
-    # 2. Setup the Python runtime environment
-    - name: Python Ayarla
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-
-    # 3. Resolve internal Python dependencies
-    - name: Bağımlılıkları Yükle
-      run: |
-        python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
-    # 4. Generate the modern launcher desktop shortcut
-    - name: Masaüstü Başlatıcı Dosyasını Oluştur
-      run: |
-        cat << 'EOF' > git_gui.desktop
-        [Desktop Entry]
-        Type=Application
-        Name=Git Manager
-        Exec=git_gui.py
-        Icon=icon
-        Categories=Development;Utility;
-        Terminal=true
-        EOF
-
-    # 5. Download and mount the official packaging runtime compiler
+    # 2. Download the AppImage packaging tool
     - name: AppImage Hazırla
       run: |
         wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
         chmod +x appimagetool-x86_64.AppImage
 
-        # Enforce proper execution boundaries
-        chmod a+x git_gui.py
-        ln -sf git_gui.py AppRun
-        chmod a+x AppRun
-        chmod -R a+rX .
-
-    # 6. Build the highly compressed standalone binary
+    # 3. Build the AppImage using the same script available to developers
     - name: AppImage Derle
       run: |
-        ARCH=x86_64 ./appimagetool-x86_64.AppImage .
-        mv Git_Manager-x86_64.AppImage Git_Gui_Portable-x86_64.AppImage
+        APPIMAGETOOL=./appimagetool-x86_64.AppImage ./build.sh
 
-    # 7. Atomically ship the binary payload to the GitHub Releases section
+    # 4. Upload the release asset
     - name: GitHub Release Olarak Yayınla
       uses: softprops/action-gh-release@v2
       with:
