@@ -1,4 +1,4 @@
-name: AppImage Otomatik Paketleme
+name: Linux Portable AppImage
 
 on:
   push:
