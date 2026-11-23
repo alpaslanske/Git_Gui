@@ -1,0 +1,61 @@
+name: Linux Portable AppImage
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Kodları Çek
+      uses: actions/checkout@v4
+
+    - name: Python Ortamını Kur
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Sistem ve Python Bağımlılıklarını Kur
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libegl1 libxkbcommon-x11-0 libxcb-cursor0
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt pyinstaller
+
+    - name: AppImage Aracını Hazırla
+      run: |
+        wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x appimagetool-x86_64.AppImage
+
+    - name: AppImage Derle
+      run: |
+        chmod +x build.sh
+        APPIMAGETOOL=./appimagetool-x86_64.AppImage ./build.sh
+
+    - name: GitHub Release Olarak Yayınla
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG_NAME: ${{ github.ref_name }}
+        REPO: ${{ github.repository }}
+      run: |
+        RELEASE_ID=$(gh api "repos/$REPO/releases" --jq ".[] | select(.tag_name == \"$TAG_NAME\") | .id" | head -n 1)
+
+        if [ -z "$RELEASE_ID" ]; then
+          gh api -X POST "repos/$REPO/releases" \
+            -f tag_name="$TAG_NAME" \
+            -f name="$TAG_NAME" \
+            -F draft=false \
+            -F generate_release_notes=true >/dev/null
+        fi
+
+        gh release upload "$TAG_NAME" Git_Gui_Portable-x86_64.AppImage --clobber

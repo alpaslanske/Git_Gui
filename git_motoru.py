@@ -1,0 +1,1072 @@
+import os
+import sys
+import shutil
+import subprocess
+
+from lang import translate
+
+
+class GitMotoru:
+    def __init__(self, language="tr"):
+        self.repo_path = ""
+        self.repo_exists = False
+        self.log_callback = None
+        self.language = language
+
+    def _t(self, key):
+        return translate(self.language, key)
+
+    def komut_logla(self, komut_metni):
+        if self.log_callback:
+            self.log_callback(komut_metni)
+
+    def git_klasoru_mu(self, path):
+        if not path or not os.path.exists(path):
+            return False
+        res = subprocess.run(
+            ["git", "-C", path, "rev-parse", "--is-inside-work-tree"],
+            capture_output=True, text=True, encoding='utf-8', errors='replace'
+        )
+        return res.returncode == 0
+
+    def set_path(self, path):
+        self.repo_path = path
+        if self.git_klasoru_mu(path):
+            self.repo_exists = True
+            return True
+        self.repo_exists = False
+        return False
+
+    def get_active_branch(self):
+        try:
+            res = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=self.repo_path, env=self.get_git_env(), capture_output=True, text=True, encoding='utf-8', errors='replace'
+            )
+            branch = res.stdout.strip()
+            if branch and branch != "HEAD":
+                return branch
+        except Exception:
+            pass
+
+        res2 = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=self.repo_path, env=self.get_git_env(), capture_output=True, text=True, encoding='utf-8', errors='replace'
+        )
+        branch2 = res2.stdout.strip()
+        return branch2 if branch2 else "main"
+
+    def get_branches(self):
+        if not self.repo_exists:
+            return [], ""
+        try:
+            env = self.get_git_env()
+            res = subprocess.run(
+                ["git", "branch"], cwd=self.repo_path, env=env, capture_output=True,
+                text=True, encoding='utf-8', errors='replace', timeout=15
+            )
+            branches = []
+            active_branch = ""
+            for line in res.stdout.splitlines():
+                if line.startswith("*"):
+                    name = line[1:].strip()
+                    active_branch = name
+                    branches.append(name)
+                else:
+                    branches.append(line.strip())
+            return branches, active_branch
+        except Exception as e:
+            self.komut_logla(self._t("log_error_branch_list").format(e))
+            return [], ""
+
+    def create_and_switch_branch(self, branch_name):
+        if not self.repo_exists: return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            self.komut_logla(f"> git checkout -b {branch_name}")
+            res = subprocess.run(["git", "checkout", "-b", branch_name], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if res.returncode == 0: return True, "ok"
+            return False, res.stderr or res.stdout
+        except Exception as e:
+            return False, str(e)
+
+    def switch_branch(self, branch_name):
+        if not self.repo_exists: return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            self.komut_logla(f"> git checkout {branch_name}")
+            res = subprocess.run(["git", "checkout", branch_name], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if res.returncode == 0: return True, "ok"
+            return False, res.stderr or res.stdout
+        except Exception as e:
+            return False, str(e)
+
+    def delete_branch(self, branch_name, force=False):
+        if not self.repo_exists: return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            flag = "-D" if force else "-d"
+            self.komut_logla(f"> git branch {flag} {branch_name}")
+            res = subprocess.run(["git", "branch", flag, branch_name], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if res.returncode == 0: return True, "ok"
+            if "not fully merged" in res.stderr.lower():
+                return False, "not_merged"
+            return False, res.stderr or res.stdout
+        except Exception as e:
+            return False, str(e)
+
+    def merge_branch(self, target_branch):
+        if not self.repo_exists: return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            self.komut_logla(f"> git merge {target_branch}")
+            res = subprocess.run(["git", "merge", target_branch], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if res.returncode == 0:
+                return True, "ok"
+            
+            # Çift dikiş çakışma kontrolü (Redundancy)
+            if self.is_in_conflict(res.stderr or res.stdout):
+                return False, "conflict"
+                
+            return False, res.stderr or res.stdout
+        except Exception as e:
+            return False, str(e)
+
+    def get_status(self):
+        if not self.repo_exists:
+            return None, self._t("msg_status_no_repo")
+        try:
+            env = self.get_git_env()
+            short_res = subprocess.run(
+                ["git", "status", "--short"], cwd=self.repo_path, env=env,
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=10
+            )
+            if short_res.returncode != 0:
+                return None, short_res.stderr or short_res.stdout or self._t("msg_git_status_unavailable")
+            is_clean = len(short_res.stdout.strip()) == 0
+
+            full_res = subprocess.run(
+                ["git", "status"], cwd=self.repo_path, env=env, capture_output=True,
+                text=True, encoding='utf-8', errors='replace', timeout=10
+            )
+            if full_res.returncode != 0:
+                return None, full_res.stderr or full_res.stdout or self._t("msg_git_status_unavailable")
+            return is_clean, full_res.stdout
+        except Exception as e:
+            return None, self._t("msg_status_read_error").format(e)
+
+    def git_init(self):
+        if self.repo_path:
+            self.komut_logla(f"> git init {self.repo_path}")
+            res = subprocess.run(
+                ["git", "init", self.repo_path], capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=30
+            )
+            if res.returncode == 0:
+                self.repo_exists = True
+                return True
+        return False
+
+    def git_commit(self, mesaj):
+        if self.repo_exists and mesaj:
+            try:
+                env = self.get_git_env()
+                self.komut_logla("> git add -A")
+                subprocess.run(
+                    ["git", "add", "-A"], cwd=self.repo_path, env=env, check=True,
+                    capture_output=True, text=True, encoding='utf-8', errors='replace',
+                    timeout=120
+                )
+
+                self.komut_logla(f'> git commit -m "{mesaj}"')
+                result = subprocess.run(
+                    ["git", "commit", "-m", mesaj], cwd=self.repo_path, env=env,
+                    capture_output=True, text=True, encoding='utf-8', errors='replace',
+                    timeout=120
+                )
+
+                if result.returncode != 0:
+                    if "nothing to commit" in result.stdout or "nothing to commit" in result.stderr:
+                        self.komut_logla(self._t("log_commit_nothing"))
+                        return True
+                    self.komut_logla(self._t("log_generic_error").format(result.stderr or result.stdout))
+                    return False
+
+                return True
+            except subprocess.CalledProcessError as e:
+                self.komut_logla(self._t("log_error_add").format(e.stderr or str(e)))
+                return False
+            except Exception as e:
+                self.komut_logla(self._t("log_generic_error").format(e))
+                return False
+        return False
+
+    def github_repo_olustur(self, repo_adi, visibility="public"):
+        if not self.repo_path:
+            return False, self._t("msg_repo_path_not_defined")
+        try:
+            env = self.get_git_env()
+            cmd = ["gh", "repo", "create", repo_adi, f"--{visibility}", "--source", ".", "--remote", "origin"]
+            self.komut_logla(f"> {' '.join(cmd)}")
+            res = subprocess.run(cmd, cwd=self.repo_path, env=env, capture_output=True, text=True, check=True, encoding='utf-8', errors='replace')
+            return True, res.stdout
+        except subprocess.CalledProcessError as e:
+            return False, e.stderr or str(e)
+        except Exception as e:
+            return False, str(e)
+
+    def has_remotes(self):
+        if not self.repo_exists:
+            return False
+        res = subprocess.run(["git", "remote"], cwd=self.repo_path, env=self.get_git_env(), capture_output=True, text=True, encoding='utf-8', errors='replace')
+        return len(res.stdout.strip()) > 0
+
+    def get_remote_url(self):
+        if not self.repo_exists:
+            return ""
+        res = subprocess.run(["git", "remote", "get-url", "origin"], cwd=self.repo_path, env=self.get_git_env(), capture_output=True, text=True, encoding='utf-8', errors='replace')
+        return res.stdout.strip() if res.returncode == 0 else ""
+
+    def add_remote(self, url):
+        if self.repo_exists:
+            self.komut_logla(f"> git remote add origin {url}")
+            try:
+                env = self.get_git_env()
+                subprocess.run(["git", "remote", "add", "origin", url], cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            except subprocess.CalledProcessError as e:
+                if "already exists" in e.stderr:
+                    self.komut_logla(self._t("log_origin_exists"))
+                    subprocess.run(["git", "remote", "set-url", "origin", url], cwd=self.repo_path, env=env, check=True)
+                else:
+                    self.komut_logla(self._t("log_error_remote_add").format(e.stderr))
+                    raise Exception(e.stderr)
+
+    def git_push(self, force=False):
+        if self.repo_exists:
+            aktif_branch = self.get_active_branch()
+            env = self.get_git_env()
+
+            if force:
+                # Stale info hatasını önlemek için önce uzak referansı tazele, ardından --force kullan
+                subprocess.run(
+                    ["git", "fetch", "origin"], cwd=self.repo_path, env=env,
+                    capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
+                )
+
+            cmd = ["git", "push", "-u", "origin", aktif_branch]
+            if force:
+                cmd.append("--force")
+
+            self.komut_logla(f"> {' '.join(cmd)}")
+            try:
+                subprocess.run(
+                    cmd, cwd=self.repo_path, env=env, check=True, capture_output=True,
+                    text=True, encoding='utf-8', errors='replace', timeout=120
+                )
+                return aktif_branch
+            except subprocess.CalledProcessError as e:
+                hata_detay = e.stderr or e.stdout
+                self.komut_logla(self._t("log_error_push").format(hata_detay))
+                raise Exception(hata_detay)
+        return None
+
+
+#     def git_commit_sil(self, hedef_hash):
+#         if not self.repo_exists:
+#             return False, "repo_yok"
+#         try:
+#             env = self.get_git_env()
+#             rev_kontrol = subprocess.run(["git", "rev-parse", "--verify", f"{hedef_hash}^"], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+#             if rev_kontrol.returncode != 0:
+#                 return False, "root_commit"
+#
+#             self.komut_logla(f"> git rebase --onto {hedef_hash}^ {hedef_hash}")
+#             res = subprocess.run(["git", "rebase", "--onto", f"{hedef_hash}^", hedef_hash], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+#
+#             if res.returncode != 0:
+#                 hata_metni = (res.stderr or res.stdout)
+#                 self.komut_logla(self._t("log_error_rebase").format(hata_metni))
+#
+#                 if self.is_in_conflict(res.stderr or res.stdout):
+#                     subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
+#                     return False, "conflict"
+#
+#                 subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
+#                 return False, "hata"
+#
+#
+#             return True, "ok"
+#         except Exception as e:
+#             self.komut_logla(self._t("log_generic_error").format(e))
+#             subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=self.get_git_env(), capture_output=True)
+#             return False, "hata"
+
+    def git_rollback(self, hedef_hash="HEAD"):
+        if self.repo_exists:
+            self.komut_logla(f"> git reset --hard {hedef_hash}")
+            try:
+                env = self.get_git_env()
+                subprocess.run(
+                    ["git", "reset", "--hard", hedef_hash], cwd=self.repo_path, env=env,
+                    check=True, capture_output=True, text=True, encoding='utf-8',
+                    errors='replace', timeout=120
+                )
+                return True
+            except subprocess.CalledProcessError as e:
+                self.komut_logla(self._t("log_error_rollback").format(e.stderr or str(e)))
+                return False
+            except Exception as e:
+                self.komut_logla(self._t("log_generic_error").format(e))
+                return False
+        return False
+
+    def gecmis_getir(self, adet=20):
+        if not self.repo_exists:
+            return []
+        try:
+            self.komut_logla(f"> git log --oneline -n {adet}")
+            env = self.get_git_env()
+            format_str = "%h|%cd|%s"
+            sonuc = subprocess.run(
+                ["git", "log", "-n", str(adet), f"--pretty=format:{format_str}", "--date=format:%Y-%m-%d %H:%M"],
+                cwd=self.repo_path,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True, encoding='utf-8', errors='replace'
+            )
+
+            satirlar = sonuc.stdout.strip().splitlines()
+            if not satirlar or satirlar == [""]:
+                return []
+
+            commitler = []
+            for satir in satirlar:
+                parcalar = satir.split("|", 2)
+                if len(parcalar) == 3:
+                    commitler.append({
+                        "hash": parcalar[0],
+                        "tarih": parcalar[1],
+                        "mesaj": parcalar[2]
+                    })
+            return commitler
+        except subprocess.CalledProcessError as e:
+            if "does not have any commits" in e.stderr or "fatal: your current branch" in e.stderr:
+                return []
+            self.komut_logla(self._t("log_error_history").format(e.stderr))
+            return None
+        except Exception as e:
+            self.komut_logla(self._t("log_error_history").format(e))
+            return None
+
+    def yerel_git_sil(self):
+        if not self.repo_path:
+            return False, "repo_yok"
+        try:
+            git_klasoru = os.path.join(self.repo_path, ".git")
+            if os.path.exists(git_klasoru):
+                shutil.rmtree(git_klasoru)
+                self.komut_logla(f"> rm -rf {git_klasoru}")
+                self.repo_exists = False
+                return True, "ok"
+            return False, self._t("msg_local_git_missing")
+        except Exception as e:
+            self.komut_logla(self._t("log_generic_error").format(e))
+            return False, str(e)
+
+    def get_git_env(self):
+        env = os.environ.copy()
+        # Kimlik doğrulama/şifre sorusu yüzünden 120 sn donmayı engeller
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        if self.repo_exists:
+            res = subprocess.run(
+                ["git", "rev-parse", "--is-bare-repository"],
+                cwd=self.repo_path, capture_output=True, text=True, encoding='utf-8', errors='replace'
+            )
+            if res.stdout.strip() == "true":
+                cfg_res = subprocess.run(
+                    ["git", "config", "core.worktree"],
+                    cwd=self.repo_path, capture_output=True, text=True, encoding='utf-8', errors='replace'
+                )
+                work_tree = cfg_res.stdout.strip()
+                if work_tree:
+                    env["GIT_WORK_TREE"] = work_tree
+                    env["GIT_DIR"] = self.repo_path
+                else:
+                    raise Exception(self._t("msg_bare_repo_config_missing"))
+        return env
+
+    def get_sync_status(self):
+        """Yerel dal ile uzak takip dalı (upstream) arasındaki commit farkını anlık döndürür."""
+        if not self.repo_exists:
+            return None
+        try:
+            if not self.has_remotes():
+                return "no_remote"
+            env = self.get_git_env()
+            res = subprocess.run(
+                ["git", "rev-list", "--left-right", "--count", "HEAD...@{u}"],
+                cwd=self.repo_path, env=env, capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=5
+            )
+            if res.returncode != 0:
+                return "no_upstream"
+            sayilar = res.stdout.strip().split()
+            if len(sayilar) == 2:
+                return {"ileri": int(sayilar[0]), "geri": int(sayilar[1])}
+            return None
+        except Exception:
+            return None
+
+    def git_fetch_kontrol(self):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            if not self.has_remotes():
+                return False, "no_remote"
+
+            self.komut_logla("> git fetch origin")
+            subprocess.run(
+                ["git", "fetch", "origin"], cwd=self.repo_path, env=env, check=True,
+                capture_output=True, text=True, encoding='utf-8', errors='replace',
+                timeout=180
+            )
+
+            aktif_branch = self.get_active_branch()
+            uzak_dal = f"origin/{aktif_branch}"
+
+            # Uzak dal henüz GitHub'da yoksa (yeni yerel dal) hata fırlatmak yerine bildir
+            dal_var_mi = subprocess.run(
+                ["git", "rev-parse", "--verify", uzak_dal],
+                cwd=self.repo_path, env=env, capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=10
+            )
+            if dal_var_mi.returncode != 0:
+                yerel_sayac = subprocess.run(
+                    ["git", "rev-list", "--count", "HEAD"],
+                    cwd=self.repo_path, env=env, capture_output=True, text=True,
+                    encoding='utf-8', errors='replace', timeout=10
+                )
+                ileri = int(yerel_sayac.stdout.strip()) if yerel_sayac.returncode == 0 and yerel_sayac.stdout.strip().isdigit() else 1
+                return True, {"ileri": ileri, "geri": 0}
+
+            rev_kontrol = subprocess.run(
+                ["git", "rev-list", "--left-right", "--count", f"HEAD...{uzak_dal}"],
+                cwd=self.repo_path, env=env, capture_output=True, text=True,
+                check=True, encoding='utf-8', errors='replace', timeout=15
+            )
+
+            sayilar = rev_kontrol.stdout.strip().split()
+            if len(sayilar) == 2:
+                return True, {"ileri": int(sayilar[0]), "geri": int(sayilar[1])}
+
+            return True, {"ileri": 0, "geri": 0}
+        except subprocess.CalledProcessError as e:
+            self.komut_logla(self._t("log_error_fetch").format(e.stderr or str(e)))
+            return False, e.stderr or str(e)
+        except Exception as e:
+            self.komut_logla(self._t("log_error_fetch").format(e))
+            return False, str(e)
+
+    def git_rebase(self, upstream_dal):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            self.komut_logla(f"> git rebase {upstream_dal}")
+            res = subprocess.run(
+                ["git", "rebase", upstream_dal],
+                cwd=self.repo_path, env=env, capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=120
+            )
+
+            if res.returncode != 0:
+                hata_metni = (res.stderr or res.stdout)
+                self.komut_logla(self._t("log_error_rebase").format(hata_metni))
+
+                if self.is_in_conflict(hata_metni):
+                    return False, "conflict"
+
+                subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
+                return False, hata_metni
+            return True, "ok"
+        except Exception as e:
+            self.komut_logla(self._t("log_generic_error").format(e))
+            subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=self.get_git_env(), capture_output=True)
+            return False, str(e)
+
+    def github_repo_sil(self, repo_adi, kullanici_adi=""):
+        try:
+            hedef = f"{kullanici_adi}/{repo_adi}" if kullanici_adi else repo_adi
+            cmd = ["gh", "repo", "delete", hedef, "--yes"]
+            self.komut_logla(f"> {' '.join(cmd)}")
+            res = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding='utf-8', errors='replace')
+            return True, res.stdout
+        except subprocess.CalledProcessError as e:
+            hata = e.stderr or e.stdout
+            self.komut_logla(self._t("log_error_github_delete").format(hata))
+            return False, hata
+        except Exception as e:
+            self.komut_logla(self._t("log_error_github_delete").format(e))
+            return False, str(e)
+
+    def get_remote_branches(self, url):
+        try:
+            self.komut_logla(f"> git ls-remote --heads {url}")
+            env = os.environ.copy()
+            env["GIT_TERMINAL_PROMPT"] = "0"
+            res = subprocess.run(
+                ["git", "ls-remote", "--heads", url],
+                capture_output=True, text=True, env=env, timeout=15, encoding='utf-8', errors='replace'
+            )
+            if res.returncode != 0:
+                return False, res.stderr.strip() or self._t("msg_remote_read_failed")
+
+            branches = []
+            for line in res.stdout.splitlines():
+                if "refs/heads/" in line:
+                    branch_name = line.split("refs/heads/")[-1].strip()
+                    if branch_name:
+                        branches.append(branch_name)
+            return True, branches
+        except subprocess.TimeoutExpired:
+            return False, self._t("msg_network_timeout")
+        except Exception as e:
+            return False, str(e)
+
+    def git_clone(self, url, hedef_dizin, branch=""):
+        try:
+            if os.path.exists(hedef_dizin):
+                return False, self._t("msg_clone_target_exists")
+
+            cmd = ["git", "clone"]
+            if branch and branch != "__ALL__":
+                cmd.extend(["-b", branch])
+            cmd.extend([url, hedef_dizin])
+
+            self.komut_logla(f"> {' '.join(cmd)}")
+            env = os.environ.copy()
+            env["GIT_TERMINAL_PROMPT"] = "0"
+            res = subprocess.run(
+                cmd,
+                capture_output=True, text=True, env=env, check=True,
+                encoding='utf-8', errors='replace', timeout=600
+            )
+
+            # Eğer "Tüm Dallar" seçildiyse uzak dalların hepsini yerelde oluştur
+            if branch == "__ALL__":
+                self.komut_logla(self._t("log_clone_all_branches"))
+                res_b = subprocess.run(
+                    ["git", "branch", "-r"], cwd=hedef_dizin, capture_output=True, text=True, encoding='utf-8', errors='replace'
+                )
+                for line in res_b.stdout.splitlines():
+                    line = line.strip()
+                    if "->" in line or not line.startswith("origin/"):
+                        continue
+                    local_name = line.replace("origin/", "", 1)
+                    subprocess.run(
+                        ["git", "branch", "--track", local_name, line],
+                        cwd=hedef_dizin, capture_output=True, text=True
+                    )
+
+            self.repo_path = hedef_dizin
+            self.repo_exists = True
+            return True, res.stdout
+        except subprocess.CalledProcessError as e:
+            hata = e.stderr or e.stdout or str(e)
+            self.komut_logla(self._t("log_error_clone").format(hata))
+            return False, hata
+        except Exception as e:
+            self.komut_logla(self._t("log_error_clone_general").format(e))
+            return False, str(e)
+
+    def git_tag_olustur(self, tag_adi, aciklama="", dosya_yolu=""):
+        if not self.repo_exists:
+            return False, "repo_yok"
+
+        env = self.get_git_env()
+        yerel_tag_olustu = False
+        uzak_tag_olustu = False
+
+        try:
+            # 1. Yerel Etiketi Oluştur
+            if aciklama.strip():
+                cmd_tag = ["git", "tag", "-a", tag_adi, "-m", aciklama]
+            else:
+                cmd_tag = ["git", "tag", tag_adi]
+
+            self.komut_logla(f"> {' '.join(cmd_tag)}")
+            subprocess.run(cmd_tag, cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            yerel_tag_olustu = True
+
+            if self.has_remotes():
+                # 2. Etiketi GitHub'a İt
+                self.komut_logla(f"> git push origin {tag_adi}")
+                subprocess.run(["git", "push", "origin", tag_adi], cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+                uzak_tag_olustu = True
+
+                # 3. GitHub Release Oluştur ve Dosya Yükle
+                self.komut_logla(f"> gh release create {tag_adi}")
+                gh_cmd = ["gh", "release", "create", tag_adi]
+                if aciklama.strip():
+                    gh_cmd.extend(["--title", tag_adi, "--notes", aciklama])
+                else:
+                    gh_cmd.extend(["--title", tag_adi, "--generate-notes"])
+
+                if dosya_yolu and os.path.exists(dosya_yolu):
+                    gh_cmd.append(dosya_yolu)
+
+                subprocess.run(gh_cmd, cwd=self.repo_path, env=env, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+
+            return True, "ok"
+
+        except subprocess.CalledProcessError as e:
+            hata = e.stderr or e.stdout or str(e)
+            self.komut_logla(self._t("log_error_release").format(hata))
+
+            # --- TEMİZLİK (ROLLBACK) İŞLEMİ ---
+            if uzak_tag_olustu:
+                self.komut_logla(self._t("log_tag_cleanup_remote").format(tag_adi))
+                subprocess.run(["git", "push", "--delete", "origin", tag_adi], cwd=self.repo_path, env=env, capture_output=True)
+            if yerel_tag_olustu:
+                self.komut_logla(self._t("log_tag_cleanup_local").format(tag_adi))
+                subprocess.run(["git", "tag", "-d", tag_adi], cwd=self.repo_path, env=env, capture_output=True)
+
+            return False, hata
+
+        except Exception as e:
+            self.komut_logla(self._t("log_error_release_general").format(e))
+
+            # --- TEMİZLİK (ROLLBACK) İŞLEMİ ---
+            if uzak_tag_olustu:
+                self.komut_logla(self._t("log_tag_cleanup_remote").format(tag_adi))
+                subprocess.run(["git", "push", "--delete", "origin", tag_adi], cwd=self.repo_path, env=env, capture_output=True)
+            if yerel_tag_olustu:
+                self.komut_logla(self._t("log_tag_cleanup_local").format(tag_adi))
+                subprocess.run(["git", "tag", "-d", tag_adi], cwd=self.repo_path, env=env, capture_output=True)
+
+            return False, str(e)
+
+    def git_rebase_continue(self):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            self.komut_logla("> git -c core.editor=true rebase --continue")
+            res = subprocess.run(
+                ["git", "-c", "core.editor=true", "rebase", "--continue"],
+                cwd=self.repo_path, env=env, capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=120
+            )
+            if res.returncode == 0:
+                return True, res.stdout or "ok"
+            return False, res.stderr or res.stdout or self._t("msg_rebase_continue_failed")
+        except Exception as e:
+            self.komut_logla(self._t("log_error_rebase_continue").format(e))
+            return False, str(e)
+
+    def git_squash(self, commit_adedi, yeni_mesaj):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        try:
+            is_clean, _ = self.get_status()
+            if is_clean is None:
+                return False, "status_error"
+            if not is_clean:
+                return False, "working_tree_dirty"
+
+            env = self.get_git_env()
+            original_head = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=self.repo_path, env=env,
+                check=True, capture_output=True, text=True, encoding='utf-8',
+                errors='replace', timeout=30
+            ).stdout.strip()
+            self.komut_logla(f"> git reset --soft HEAD~{commit_adedi}")
+            subprocess.run(
+                ["git", "reset", "--soft", f"HEAD~{commit_adedi}"],
+                cwd=self.repo_path,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True, encoding='utf-8', errors='replace', timeout=120
+            )
+            self.komut_logla(f'> git commit -m "{yeni_mesaj}"')
+            subprocess.run(
+                ["git", "commit", "-m", yeni_mesaj],
+                cwd=self.repo_path,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True, encoding='utf-8', errors='replace', timeout=120
+            )
+            return True, "ok"
+        except subprocess.CalledProcessError as e:
+            hata = e.stderr or e.stdout or str(e)
+            self.komut_logla(self._t("log_error_squash").format(hata))
+            if "original_head" in locals():
+                try:
+                    subprocess.run(
+                        ["git", "reset", "--soft", original_head], cwd=self.repo_path,
+                        env=env, check=True, capture_output=True, text=True,
+                        encoding='utf-8', errors='replace', timeout=30
+                    )
+                    self.komut_logla(self._t("log_squash_restored"))
+                except Exception as rollback_error:
+                    hata = f"{hata}\n{self._t('log_squash_restore_failed').format(rollback_error)}"
+                    self.komut_logla(self._t("log_error_squash_rollback").format(rollback_error))
+            return False, hata
+        except Exception as e:
+            self.komut_logla(self._t("log_error_squash").format(e))
+            if "original_head" in locals():
+                try:
+                    subprocess.run(
+                        ["git", "reset", "--soft", original_head], cwd=self.repo_path,
+                        env=env, check=True, capture_output=True, text=True,
+                        encoding='utf-8', errors='replace', timeout=30
+                    )
+                    self.komut_logla(self._t("log_squash_restored"))
+                except Exception as rollback_error:
+                    e = RuntimeError(f"{e}\n{self._t('log_squash_restore_failed').format(rollback_error)}")
+                    self.komut_logla(self._t("log_error_squash_rollback").format(rollback_error))
+            return False, str(e)
+
+    def gecmis_getir(self, adet=20, logla=True):
+        if not self.repo_exists:
+            return []
+        try:
+            if logla:
+                self.komut_logla(f"> git log --oneline -n {adet}")
+            env = self.get_git_env()
+            format_str = "%h|%cd|%s"
+            sonuc = subprocess.run(
+                ["git", "log", "-n", str(adet), f"--pretty=format:{format_str}", "--date=format:%Y-%m-%d %H:%M"],
+                cwd=self.repo_path,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True, encoding='utf-8', errors='replace'
+            )
+
+            satirlar = sonuc.stdout.strip().splitlines()
+            if not satirlar or satirlar == [""]:
+                return []
+
+            commitler = []
+            for satir in satirlar:
+                parcalar = satir.split("|", 2)
+                if len(parcalar) == 3:
+                    commitler.append({
+                        "hash": parcalar[0],
+                        "tarih": parcalar[1],
+                        "mesaj": parcalar[2]
+                    })
+            return commitler
+        except subprocess.CalledProcessError as e:
+            if "does not have any commits" in e.stderr or "fatal: your current branch" in e.stderr:
+                return []
+            self.komut_logla(self._t("log_error_history").format(e.stderr))
+            return None
+        except Exception as e:
+            self.komut_logla(self._t("log_error_history").format(e))
+            return None
+
+    def yerel_taglari_getir(self):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            self.komut_logla("> git tag -n")
+            res = subprocess.run(["git", "tag", "-n"], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if res.returncode == 0:
+                taglar = res.stdout.strip()
+                return True, taglar if taglar else self._t("msg_no_local_tags")
+            return False, res.stderr or res.stdout
+        except Exception as e:
+            self.komut_logla(self._t("log_error_tag_list").format(e))
+            return False, str(e)
+
+    def get_remotes_list(self):
+        if not self.repo_exists:
+            return []
+        try:
+            res = subprocess.run(["git", "remote", "-v"], cwd=self.repo_path, env=self.get_git_env(), capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if res.returncode != 0:
+                return []
+            remotes = set()
+            for satir in res.stdout.strip().splitlines():
+                if satir:
+                    parcalar = satir.split()
+                    if len(parcalar) >= 2:
+                        remotes.add(f"{parcalar[0]} - {parcalar[1]}")
+            return sorted(list(remotes))
+        except Exception:
+            return []
+
+    def add_custom_remote(self, isim, url):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        self.komut_logla(f"> git remote add {isim} {url}")
+        try:
+            subprocess.run(["git", "remote", "add", isim, url], cwd=self.repo_path, env=self.get_git_env(), check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            return True, "ok"
+        except subprocess.CalledProcessError as e:
+            self.komut_logla(self._t("log_generic_error").format(e.stderr))
+            return False, e.stderr or self._t("msg_unknown_error")
+
+    def remove_remote(self, isim):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        self.komut_logla(f"> git remote remove {isim}")
+        try:
+            subprocess.run(["git", "remote", "remove", isim], cwd=self.repo_path, env=self.get_git_env(), check=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            return True, "ok"
+        except subprocess.CalledProcessError as e:
+            self.komut_logla(self._t("log_generic_error").format(e.stderr))
+            return False, e.stderr or self._t("msg_unknown_error")
+            
+    def get_conflicted_files(self):
+        if not self.repo_exists: return []
+        try:
+            env = self.get_git_env()
+            # U harfi (Unmerged/Çakışmış) dosyaları getirir
+            res = subprocess.run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8')
+            return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+        except Exception as e:
+            self.komut_logla(self._t("log_error_conflict_list").format(e))
+            return []
+
+    def mark_resolved(self, dosya_yolu):
+        if not self.repo_exists: return False
+        try:
+            env = self.get_git_env()
+            self.komut_logla(f"> git add {dosya_yolu}")
+            subprocess.run(["git", "add", dosya_yolu], cwd=self.repo_path, env=env, check=True)
+            return True
+        except Exception as e:
+            self.komut_logla(self._t("log_error_resolve").format(e))
+            return False
+
+    def is_in_conflict(self, git_ciktisi=""):
+        # 1. Yöntem (Yedek Sensör): Çıktıdan kelime avı
+        hata_metni = str(git_ciktisi).lower()
+        if "conflict" in hata_metni or "çakışma" in hata_metni:
+            return True
+            
+        # 2. Yöntem (Ana Sensör): Git'in çekirdeğine sorma
+        if not self.repo_exists: return False
+        try:
+            res = subprocess.run(
+                ["git", "ls-files", "-u"], 
+                cwd=self.repo_path, 
+                env=self.get_git_env(),
+                capture_output=True, 
+                text=True, 
+                encoding='utf-8', 
+                errors='replace'
+            )
+            return len(res.stdout.strip()) > 0
+        except Exception as e:
+            self.komut_logla(self._t("log_error_conflict_check").format(e))
+            return False
+
+    def git_restore_all(self):
+        if not self.repo_exists: return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            self.komut_logla("> git reset --hard HEAD")
+            subprocess.run(
+                ["git", "reset", "--hard", "HEAD"], cwd=self.repo_path, env=env,
+                check=True, capture_output=True, text=True, encoding='utf-8',
+                errors='replace', timeout=120
+            )
+            
+            self.komut_logla("> git clean -fd")
+            subprocess.run(
+                ["git", "clean", "-fd"], cwd=self.repo_path, env=env, check=True,
+                capture_output=True, text=True, encoding='utf-8', errors='replace',
+                timeout=120
+            )
+            
+            return True, "ok"
+        except Exception as e:
+            self.komut_logla(self._t("log_error_restore").format(e))
+            return False, str(e)
+
+    def git_stash_save(self, mesaj=""):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        try:
+            is_clean, _ = self.get_status()
+            if is_clean is None:
+                return False, "status_error"
+            if is_clean:
+                return False, "empty"
+
+            env = self.get_git_env()
+            cmd = ["git", "stash", "push", "-u"]
+            if mesaj.strip():
+                cmd.extend(["-m", mesaj.strip()])
+
+            self.komut_logla(f"> {' '.join(cmd)}")
+            res = subprocess.run(cmd, cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if res.returncode == 0:
+                return True, "ok"
+            return False, res.stderr or res.stdout
+        except Exception as e:
+            self.komut_logla(self._t("log_error_stash").format(e))
+            return False, str(e)
+
+    def git_stash_list(self):
+        if not self.repo_exists:
+            return []
+        try:
+            env = self.get_git_env()
+            res = subprocess.run(
+                ["git", "stash", "list"],
+                cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace'
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+            return []
+        except Exception:
+            return []
+
+    def git_stash_pop(self, stash_ref=""):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            cmd = ["git", "stash", "pop"]
+            if stash_ref:
+                cmd.append(stash_ref)
+
+            self.komut_logla(f"> {' '.join(cmd)}")
+            res = subprocess.run(cmd, cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if res.returncode == 0:
+                return True, "ok"
+
+            cikti = (res.stderr or res.stdout).lower()
+            if "no stash entries found" in cikti:
+                return False, "empty"
+            if self.is_in_conflict(res.stderr or res.stdout):
+                return False, "conflict"
+            return False, res.stderr or res.stdout
+        except Exception as e:
+            self.komut_logla(self._t("log_error_stash_pop").format(e))
+            return False, str(e)
+
+    def git_stash_drop(self, stash_ref=""):
+        if not self.repo_exists:
+            return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+            cmd = ["git", "stash", "drop"]
+            if stash_ref:
+                cmd.append(stash_ref)
+
+            self.komut_logla(f"> {' '.join(cmd)}")
+            res = subprocess.run(cmd, cwd=self.repo_path, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if res.returncode == 0:
+                return True, "ok"
+            return False, res.stderr or res.stdout
+        except Exception as e:
+            self.komut_logla(self._t("log_error_stash_drop").format(e))
+            return False, str(e)
+
+    def git_toplu_commit_erit(self, hedef_hash_listesi):
+        """Seçilen commitleri listeden siler ancak kod değişikliklerini bir önceki commitlere dahil eder."""
+        if not self.repo_exists or not hedef_hash_listesi:
+            return False, "repo_yok"
+        try:
+            env = self.get_git_env()
+
+            # Çalışma dizini temiz mi kontrol et (Rebase öncesi şarttır)
+            is_clean, _ = self.get_status()
+            if not is_clean:
+                return False, "dirty_working_tree"
+
+            # Tüm geçmişi (en eskiden en yeniye) hash listesi olarak al
+            log_res = subprocess.run(
+                ["git", "rev-list", "--reverse", "HEAD"],
+                cwd=self.repo_path, env=env, capture_output=True, text=True, check=True
+            )
+            tum_commitler = log_res.stdout.strip().splitlines()
+            if not tum_commitler:
+                return False, "empty"
+
+            # Seçilen kısa hash'leri tam 40 karakterlik hash'lere çevir
+            tam_hedefler = set()
+            for h in hedef_hash_listesi:
+                rev = subprocess.run(
+                    ["git", "rev-parse", h],
+                    cwd=self.repo_path, env=env, capture_output=True, text=True, check=True
+                ).stdout.strip()
+                tam_hedefler.add(rev)
+
+            # En eski (root) commit seçilmiş mi kontrol et (bir öncesi olmadığı için eritilemez)
+            if tum_commitler[0] in tam_hedefler:
+                return False, "root_commit"
+
+            # Seçilenler arasında en eski commit'in indeksini bul ve bir öncesini base al
+            indeksler = [tum_commitler.index(h) for h in tam_hedefler if h in tum_commitler]
+            if not indeksler:
+                return False, "not_found"
+
+            en_eski_indeks = min(indeksler)
+            base_commit = tum_commitler[en_eski_indeks - 1]
+
+            # Editör açmadan todo dosyasındaki ilgili 'pick' satırlarını 'fixup' yapan Python komutu
+            kisa_hedefler_str = ",".join([h[:7] for h in tam_hedefler])
+            py_script = (
+                "import sys; "
+                f"targets = set('{kisa_hedefler_str}'.split(',')); "
+                "p = sys.argv[1]; "
+                "lines = open(p, encoding='utf-8').readlines(); "
+                "new_lines = ['fixup ' + l[5:] if l.startswith('pick ') and any(l.split()[1].startswith(t) for t in targets) else l for l in lines]; "
+                "open(p, 'w', encoding='utf-8').writelines(new_lines)"
+            )
+            env["GIT_SEQUENCE_EDITOR"] = f'"{sys.executable}" -c "{py_script}"'
+
+            self.komut_logla(f"> git rebase -i {base_commit} (Toplu Fixup: {len(tam_hedefler)} commit)")
+            res = subprocess.run(
+                ["git", "rebase", "-i", base_commit],
+                cwd=self.repo_path, env=env, capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=120
+            )
+
+            if res.returncode != 0:
+                hata_metni = res.stderr or res.stdout
+                self.komut_logla(self._t("log_error_rebase").format(hata_metni))
+                if self.is_in_conflict(hata_metni):
+                    subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
+                    return False, "conflict"
+                subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=env, capture_output=True)
+                return False, hata_metni
+
+            return True, "ok"
+        except Exception as e:
+            self.komut_logla(self._t("log_generic_error").format(e))
+            subprocess.run(["git", "rebase", "--abort"], cwd=self.repo_path, env=self.get_git_env(), capture_output=True)
+            return False, str(e)
+
+    def get_root_commit_hash(self):
+      if not self.repo_exists:
+          return ""
+      try:
+          res = subprocess.run(
+              ["git", "rev-list", "--max-parents=0", "HEAD"],
+              cwd=self.repo_path, env=self.get_git_env(),
+              capture_output=True, text=True, encoding='utf-8', errors='replace'
+          )
+          if res.returncode == 0 and res.stdout.strip():
+              tam_hash = res.stdout.strip().splitlines()
+              short_res = subprocess.run(
+                  ["git", "rev-parse", "--short=7", tam_hash],
+                  cwd=self.repo_path, env=self.get_git_env(),
+                  capture_output=True, text=True, encoding='utf-8', errors='replace'
+              )
+              return short_res.stdout.strip()
+      except Exception:
+          pass
+      return ""
