@@ -165,6 +165,8 @@ class PullIscisi(QThread):
                 self.sonuc_sinyali.emit(True, res.stdout.strip())
             else:
                 self.sonuc_sinyali.emit(False, res.stderr.strip())
+        except subprocess.TimeoutExpired:
+            self.sonuc_sinyali.emit(False, translate(self.language, "msg_network_timeout"))
         except Exception as e:
             self.sonuc_sinyali.emit(False, str(e))
 

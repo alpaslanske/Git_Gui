@@ -250,7 +250,7 @@ class GitMotoru:
                 # Stale info hatasını önlemek için önce uzak referansı tazele, ardından --force kullan
                 subprocess.run(
                     ["git", "fetch", "origin"], cwd=self.repo_path, env=env,
-                    capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
+                    capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300
                 )
 
             cmd = ["git", "push", "-u", "origin", aktif_branch]
@@ -261,14 +261,19 @@ class GitMotoru:
             try:
                 subprocess.run(
                     cmd, cwd=self.repo_path, env=env, check=True, capture_output=True,
-                    text=True, encoding='utf-8', errors='replace', timeout=120
+                    text=True, encoding='utf-8', errors='replace', timeout=300
                 )
                 return aktif_branch
+            except subprocess.TimeoutExpired:
+                hata_detay = self._t("msg_network_timeout")
+                self.komut_logla(self._t("log_error_push").format(hata_detay))
+                raise Exception(hata_detay)
             except subprocess.CalledProcessError as e:
                 hata_detay = e.stderr or e.stdout
                 self.komut_logla(self._t("log_error_push").format(hata_detay))
                 raise Exception(hata_detay)
         return None
+
 
 
 #     def git_commit_sil(self, hedef_hash):
@@ -430,8 +435,9 @@ class GitMotoru:
             subprocess.run(
                 ["git", "fetch", "origin"], cwd=self.repo_path, env=env, check=True,
                 capture_output=True, text=True, encoding='utf-8', errors='replace',
-                timeout=180
+                timeout=300
             )
+
 
             aktif_branch = self.get_active_branch()
             uzak_dal = f"origin/{aktif_branch}"
@@ -462,9 +468,16 @@ class GitMotoru:
                 return True, {"ileri": int(sayilar[0]), "geri": int(sayilar[1])}
 
             return True, {"ileri": 0, "geri": 0}
+
         except subprocess.CalledProcessError as e:
             self.komut_logla(self._t("log_error_fetch").format(e.stderr or str(e)))
             return False, e.stderr or str(e)
+
+        except subprocess.TimeoutExpired:
+            hata = self._t("msg_network_timeout")
+            self.komut_logla(self._t("log_error_fetch").format(hata))
+            return False, hata
+
         except Exception as e:
             self.komut_logla(self._t("log_error_fetch").format(e))
             return False, str(e)
